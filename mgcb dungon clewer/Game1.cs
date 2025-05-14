@@ -147,13 +147,14 @@ namespace mgcb_dungon_clewer
             {
                 fill = Color.Blue;
 
-                for (int i = 0; i < width / 100; i++)
+                /*for (int i = 0; i < width / 100; i++)
                 {
                     for (int j = 0; j < heigth / 100; j++)
                     {
                         DrawRect(i * 100, j * 100, 100, 100, stroke, fill);
                     }
-                }
+                }*/
+                DrawRect(width/4, 0, width/2, heigth, stroke, fill);
             }
 
             myButton.Draw(_spriteBatch);

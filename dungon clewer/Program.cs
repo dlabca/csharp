@@ -201,6 +201,7 @@ namespace DungeonCrawler
                 if (command == "utok")
                 {
                     player.Attack(enemy);
+                    player.mecdurabiliti--;
                     if (enemy.Health > 0)
                     {
                         enemy.Attack(player);
@@ -353,7 +354,7 @@ namespace DungeonCrawler
                     damagevalue = baseAttackPower;
                     Console.WriteLine("mec se vam rozbil");
                 }
-                mecdurabiliti--;
+
                 return damagevalue;
             }
 
