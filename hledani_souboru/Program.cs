@@ -10,7 +10,7 @@ class Program
     static void Main()
     {
         // Pole hledaných výrazů
-        string[] searchTerms = {"Scrcpy"};  // Zadejte více hledaných slov
+        string[] searchTerms = {"projekt"};  // Zadejte více hledaných slov
 
         // Získejte všechny logické disky v systému
         foreach (var drive in DriveInfo.GetDrives())

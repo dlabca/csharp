@@ -145,7 +145,7 @@ namespace mgcb_dungon_clewer
             //DrawLine(_spriteBatch, new Vector2(2 * width / 3, 0), new Vector2(2 * width / 3, heigth), Color.Black, 1f);
             if (mapa_zobrazena == true)
             {
-                fill = Color.Blue;
+                
 
                 /*for (int i = 0; i < width / 100; i++)
                 {
@@ -154,7 +154,14 @@ namespace mgcb_dungon_clewer
                         DrawRect(i * 100, j * 100, 100, 100, stroke, fill);
                     }
                 }*/
-                DrawRect(width/4, 0, width/2, heigth, stroke, fill);
+                DrawRect(width / 4, 0, width / 2, heigth, stroke, fill);
+                for (int i = 0; i < width / 2 / 100; i++)
+                {
+                    for (int j = 0; j < heigth / 100; j++)
+                    {
+                        DrawRect(width / 4 + i * 100 , j * 100, 100, 100, stroke, fill);
+                    }
+                }
             }
 
             myButton.Draw(_spriteBatch);
@@ -165,7 +172,7 @@ namespace mgcb_dungon_clewer
             base.Draw(gameTime);
         }
 
-        public static Color fill = Color.Black;
+        public static Color fill = Color.Blue;
         public static Color stroke = Color.Black;
         public void DrawRect(int x, int y, int width, int height, Color stroke, Color fill)
         {
