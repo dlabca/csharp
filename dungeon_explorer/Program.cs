@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Security.Cryptography.X509Certificates;
 
 namespace dungeon_explorer
 {
@@ -24,6 +25,7 @@ namespace dungeon_explorer
             Armor,
             Consumable
         }
+        Random random = new Random();
 
         public void Start()
         {
@@ -38,7 +40,7 @@ namespace dungeon_explorer
             Console.Clear();
             while (true)
             {
-                Console.WriteLine("> ");
+                Console.Write(">");
 
                 string input = Console.ReadLine();
 
@@ -51,6 +53,44 @@ namespace dungeon_explorer
                     HandleCommand(input);
                 }
             }
+        }
+        void Combat(Enemy enemy)
+        {
+            float enemyCriticalChance = enemy.ChanceToCriticalHit;
+            float playerCriticalChance = player.ChanceToCriticalHit;
+            int playerDamage;
+            int enemyDamage;
+            int playerdamagereduction;
+            if (player.EquippedWeapon != null)
+            {
+                playerDamage = player.EquippedWeapon.Damage;
+            }
+            else
+            {
+                playerDamage = player.BaseAttackPower;
+            }
+            if (player.EquippedArmor != null)
+            {
+                playerdamagereduction = player.EquippedArmor.DamageReduction;
+            }
+            else
+            {
+                playerdamagereduction = 0;
+            }
+
+            void playerHit()
+            {
+                int damage = playerDamage;
+                if (random.NextDouble() < playerCriticalChance) damage *= 2;
+                enemy.Health -= damage;
+            }
+            void enemyHit()
+            {
+                int damage = enemyDamage;
+                if (random.NextDouble() < enemyCriticalChance) damage *= 2;
+                player.Health -= damage - playerdamagereduction;
+            }
+
         }
         void MovePlayer(string direction)
         {
@@ -134,7 +174,7 @@ namespace dungeon_explorer
                         Console.WriteLine($"-{item.Name}: {item.Description}");
                     }
                     break;
-                case "pouzij":
+                case "použij":
                     Console.WriteLine("Použít předmět");
                     UseItem(target);
                     break;
@@ -151,7 +191,7 @@ namespace dungeon_explorer
                         Console.WriteLine($"Předmět {target} nebyl nalezen.");
                     }
                     break;
-                case "prozkomat":
+                case "prozkoumej":
                     Console.WriteLine($"Prozkoumáváte {player.CurrentRoom.Name}: {player.CurrentRoom.Description}");
                     if (player.CurrentRoom.Enemies.Count > 0)
                     {
@@ -178,7 +218,7 @@ namespace dungeon_explorer
                         Console.WriteLine("V místnosti nejsou žádné předměty.");
                     }
                     break;
-                case "statystiky":
+                case "statistiky":
                     Console.WriteLine($"Jméno: {player.Name}");
                     Console.WriteLine($"Zdraví: {player.Health}");
                     Console.WriteLine($"Útočná síla: {player.BaseAttackPower}");
@@ -227,13 +267,18 @@ namespace dungeon_explorer
         void PrintControls()
         {
             Console.WriteLine("Ovládání:");
-            Console.WriteLine("Jdi [nahoru/dolu/doleva/doprava] - pohyb");
-            Console.WriteLine("Konec(nebo exit) - ukončit hru");
-            Console.WriteLine("Inventar - inventář");
-            Console.WriteLine("Pouzij - použít předmět");
+            Console.WriteLine("  jdi [nahoru/dolu/doleva/doprava] - pohyb mezi místnostmi");
+            Console.WriteLine("  prozkoumej - popíše aktuální místnost, nepřátele a předměty");
+            Console.WriteLine("  vezmi [název] - vezme předmět z místnosti do inventáře");
+            Console.WriteLine("  použij [název] - použije předmět z inventáře (např. lektvar, zbroj, zbraň)");
+            Console.WriteLine("  inventar - zobrazí inventář hráče");
+            Console.WriteLine("  statystiky - zobrazí statistiky hráče (zdraví, výbava, síla)");
+            Console.WriteLine("  konec / exit - ukončí hru");
+            Console.WriteLine();
             Console.WriteLine("Stiskněte libovolnou klávesu pro pokračování...");
-            Console.ReadKey();
+            Console.ReadKey(true);
         }
+
         void SetupRooms()
         {
             map = new Room[mapWidth, mapHeight];
