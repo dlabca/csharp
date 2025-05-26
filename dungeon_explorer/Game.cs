@@ -120,8 +120,10 @@ class Game
         float enemyCriticalChance = enemy.ChanceToCriticalHit;
         float playerCriticalChance = player.ChanceToCriticalHit;
         int playerDamage;
-        int enemyDamage;
+        int enemyDamage = enemy.AttackPower;
         int playerdamagereduction;
+
+
         if (player.EquippedWeapon != null)
         {
             playerDamage = player.EquippedWeapon.Damage;
@@ -139,17 +141,121 @@ class Game
             playerdamagereduction = 0;
         }
 
-        void playerHit()
+        string answer;
+        Console.WriteLine($"Tvé zdraví: {player.Health}, Zdraví nepřítele: {enemy.Health}");
+        Console.WriteLine($"Boj s {enemy.Name} začíná!");
+        while (player.Health > 0 && enemy.Health > 0)
         {
-            int damage = playerDamage;
-            if (random.NextDouble() < playerCriticalChance) damage *= 2;
-            enemy.Health -= damage;
+            List<string> actions = new List<string> { "bránit", "úhyb" };
+            if (Chance(0.3f)) actions.Add("utočit");
+            Console.WriteLine("vyberte možnost:" + string.Join(" | ", actions));
+            Console.Write("> ");
+            answer = Console.ReadLine();
+            while (!actions.Contains(answer))
+            {
+                Console.WriteLine("odpověď neni ve výběru vyberte znovu:" + string.Join(" | ", actions));
+                answer = Console.ReadLine();
+            }
+            switch (answer)
+            {
+                case "utočit":
+                    int damage;
+                    damage = playerDamage;
+                    if (Chance(playerCriticalChance))
+                    {
+                        damage *= 2;
+                        Console.WriteLine($"Útočíte na {enemy.Name}! Způsobili jste KRITICKÝ zásah za {damage} poškození!");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Útočíte na {enemy.Name}! Způsobili jste {damage} poškození!");
+                    }
+                    enemy.Health -= damage;
+                    if (enemy.Health <= 0)
+                    {
+                        Console.WriteLine($"Porazili jste {enemy.Name}!");
+                        player.CurrentRoom.Enemies.Remove(enemy);
+                        return;
+                    }
+                    damage = enemyDamage;
+                    if (Chance(enemyCriticalChance))
+                    {
+                        damage *= 2;
+                        Console.WriteLine($"{enemy.Name} útočí! Způsobil KRITICKÝ zásah za {damage} poškození!");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"{enemy.Name} útočí! Způsobil {damage} poškození!");
+                    }
+                    player.Health -= Math.Max(0,damage - playerdamagereduction);
+                    if (player.Health <= 0)
+                    {
+                        Console.WriteLine("Byl jsi poražen! Konec hry.");
+                        return;
+                    }
+                    break;
+                case "úhyb":
+                    if (Chance(0.75f))
+                    {
+
+                        if (Chance(0.3f))
+                        {
+                            damage = playerDamage;
+                            enemy.Health -= damage;
+                            Console.WriteLine($"Úspěšně jste se vyhnuli útoku a provedli protiútok za {damage} poškození!");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Úspěšně jste se vyhnuli útoku!");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("úhyb se nepovedl");
+                        damage = enemyDamage;
+                        if (Chance(enemyCriticalChance))
+                        {
+                            damage *= 2;
+                            Console.WriteLine($"Úhyb se nepovedl. {enemy.Name} zasáhl kriticky za {damage - playerdamagereduction} poškození!");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Úhyb se nepovedl. {enemy.Name} zasáhl za {damage - playerdamagereduction} poškození!");
+                        }
+                        player.Health -= Math.Max(0, damage - playerdamagereduction);
+                        if (player.Health <= 0)
+                        {
+                            Console.WriteLine("Byl jsi poražen! Konec hry.");
+                            return;
+                        }
+                    }
+                    break;
+                case "bránit":
+                    damage = enemyDamage;
+                    if (Chance(enemyCriticalChance))
+                    {
+                        damage *= 2;
+                        int reducet = (int)(damage * 0.1);
+                        player.Health -= reducet;
+                        Console.WriteLine($"Bráníš se, ale {enemy.Name} zasáhl kriticky za {reducet} poškození!");
+                    }
+                    else
+                    {
+                        int reducet = (int)(damage * 0.1);
+                        player.Health -= reducet;
+                        Console.WriteLine($"Bráníš se, ale {enemy.Name} zasáhl za {reducet} poškození!");
+                    }
+                    if (player.Health <= 0)
+                    {
+                        Console.WriteLine("Byl jsi poražen! Konec hry.");
+                        return;
+                    }
+                    break;
+            }
         }
-        void enemyHit()
+        bool Chance(float chance)
         {
-            int damage = enemyDamage;
-            if (random.NextDouble() < enemyCriticalChance) damage *= 2;
-            player.Health -= damage - playerdamagereduction;
+            return random.NextDouble() < chance;
         }
 
     }
