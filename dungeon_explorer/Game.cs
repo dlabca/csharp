@@ -56,6 +56,17 @@ class Game
                 Console.WriteLine("Použít předmět");
                 UseItem(target);
                 break;
+            case "boj":
+                Enemy enemy = player.CurrentRoom.Enemies.Find(e => e.Name.ToLower() == target.ToLower());
+                if (enemy != null)
+                {
+                    Combat(enemy);
+                }
+                else
+                {
+                    Console.WriteLine($"Nepřítel {target} nebyl nalezen.");
+                }
+                break;
             case "vezmi":
                 Item itemToTake = player.CurrentRoom.Items.Find(i => i.Name.ToLower() == target.ToLower());
                 if (itemToTake != null)
@@ -74,9 +85,9 @@ class Game
                 if (player.CurrentRoom.Enemies.Count > 0)
                 {
                     Console.WriteLine("V místnosti jsou následující nepřátelé:");
-                    foreach (Enemy enemy in player.CurrentRoom.Enemies)
+                    foreach (Enemy e in player.CurrentRoom.Enemies)
                     {
-                        Console.WriteLine($"-{enemy.Name}");
+                        Console.WriteLine($"-{e.Name}");
                     }
                 }
                 else
