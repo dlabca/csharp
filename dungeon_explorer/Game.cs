@@ -46,6 +46,11 @@ class Game
                 MovePlayer(target);
                 break;
             case "inventar":
+                if (player.Inventory.Count == 0)
+                {
+                    Console.WriteLine("Tvůj inventář je prázdný.");
+                    break;
+                }
                 Console.WriteLine("Zobrazit inventář");
                 foreach (Item item in player.Inventory)
                 {
@@ -56,7 +61,28 @@ class Game
                 Console.WriteLine("Použít předmět");
                 UseItem(target);
                 break;
+            case "boj":
+                if(target == null)
+                {
+                    Console.WriteLine("Zadej jméno nepřítele, se kterým chceš bojovat.");
+                    return;
+                }
+                Enemy enemy = player.CurrentRoom.Enemies.Find(e => e.Name.ToLower() == target.ToLower());
+                if (enemy != null)
+                {
+                    Combat(enemy);
+                }
+                else
+                {
+                    Console.WriteLine($"Nepřítel {target} nebyl nalezen.");
+                }
+                break;
             case "vezmi":
+                if (target == null)
+                {
+                    Console.WriteLine("Zadej název předmětu, který chceš vzít.");
+                    return;
+                }
                 Item itemToTake = player.CurrentRoom.Items.Find(i => i.Name.ToLower() == target.ToLower());
                 if (itemToTake != null)
                 {
@@ -74,9 +100,9 @@ class Game
                 if (player.CurrentRoom.Enemies.Count > 0)
                 {
                     Console.WriteLine("V místnosti jsou následující nepřátelé:");
-                    foreach (Enemy enemy in player.CurrentRoom.Enemies)
+                    foreach (Enemy e in player.CurrentRoom.Enemies)
                     {
-                        Console.WriteLine($"-{enemy.Name}");
+                        Console.WriteLine($"-{e.Name}");
                     }
                 }
                 else
@@ -97,9 +123,10 @@ class Game
                 }
                 break;
             case "statistiky":
+                Console.WriteLine("Zobrazit statistiky hráče:");
                 Console.WriteLine($"Jméno: {player.Name}");
                 Console.WriteLine($"Zdraví: {player.Health}");
-                Console.WriteLine($"Útočná síla: {player.BaseAttackPower}");
+                Console.WriteLine($"Útočná síla: {player.AttackPower}");
                 Console.WriteLine($"Šance na kritický zásah: {player.ChanceToCriticalHit * 100}%");
                 if (player.EquippedArmor != null)
                 {
@@ -119,27 +146,9 @@ class Game
     {
         float enemyCriticalChance = enemy.ChanceToCriticalHit;
         float playerCriticalChance = player.ChanceToCriticalHit;
-        int playerDamage;
+        int playerDamage = player.EquippedWeapon?.Damage ?? player.AttackPower;
         int enemyDamage = enemy.AttackPower;
-        int playerdamagereduction;
-
-
-        if (player.EquippedWeapon != null)
-        {
-            playerDamage = player.EquippedWeapon.Damage;
-        }
-        else
-        {
-            playerDamage = player.BaseAttackPower;
-        }
-        if (player.EquippedArmor != null)
-        {
-            playerdamagereduction = player.EquippedArmor.DamageReduction;
-        }
-        else
-        {
-            playerdamagereduction = 0;
-        }
+        int playerdamagereduction = player.EquippedArmor?.DamageReduction ?? 0;
 
         string answer;
         Console.WriteLine($"Tvé zdraví: {player.Health}, Zdraví nepřítele: {enemy.Health}");
@@ -150,12 +159,10 @@ class Game
             if (Chance(0.3f)) actions.Add("utočit");
             Console.WriteLine("vyberte možnost:" + string.Join(" | ", actions));
             Console.Write("> ");
-            answer = Console.ReadLine();
-            while (!actions.Contains(answer))
-            {
+
+            while (!actions.Contains(answer = Console.ReadLine()))
                 Console.WriteLine("odpověď neni ve výběru vyberte znovu:" + string.Join(" | ", actions));
-                answer = Console.ReadLine();
-            }
+                
             switch (answer)
             {
                 case "utočit":
@@ -187,7 +194,7 @@ class Game
                     {
                         Console.WriteLine($"{enemy.Name} útočí! Způsobil {damage} poškození!");
                     }
-                    player.Health -= Math.Max(0,damage - playerdamagereduction);
+                    player.Health -= Math.Max(0, damage - playerdamagereduction);
                     if (player.Health <= 0)
                     {
                         Console.WriteLine("Byl jsi poražen! Konec hry.");
@@ -235,14 +242,14 @@ class Game
                     if (Chance(enemyCriticalChance))
                     {
                         damage *= 2;
-                        int reducet = (int)(damage * 0.1);
-                        player.Health -= reducet;
+                        int reducet = (int)(damage * 0.1f);
+                        player.Health -= playerdamagereduction - reducet;
                         Console.WriteLine($"Bráníš se, ale {enemy.Name} zasáhl kriticky za {reducet} poškození!");
                     }
                     else
                     {
-                        int reducet = (int)(damage * 0.1);
-                        player.Health -= reducet;
+                        int reducet = (int)(damage * 0.1f);
+                        player.Health -= playerdamagereduction - reducet;
                         Console.WriteLine($"Bráníš se, ale {enemy.Name} zasáhl za {reducet} poškození!");
                     }
                     if (player.Health <= 0)
