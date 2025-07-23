@@ -62,11 +62,13 @@ class Game
                 UseItem(target);
                 break;
             case "boj":
+
                 if(target == null)
                 {
                     Console.WriteLine("Zadej jméno nepřítele, se kterým chceš bojovat.");
                     return;
                 }
+
                 Enemy enemy = player.CurrentRoom.Enemies.Find(e => e.Name.ToLower() == target.ToLower());
                 if (enemy != null)
                 {
