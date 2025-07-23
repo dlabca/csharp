@@ -1,23 +1,21 @@
-class Player
+class Player : Entity
 {
-    public string Name { get; set; }
-    public int Health { get; set; }
-    public int BaseAttackPower { get; set; }
-    public float ChanceToCriticalHit { get; set; }
     public List<Item> Inventory { get; set; }
     public Item EquippedArmor { get; set; }
     public Item EquippedWeapon { get; set; }
     public Room CurrentRoom { get; set; }
     public Position CurrentPosition { get; set; }
 
+    public override int DamageReduction => EquippedArmor?.DamageReduction ?? base.DamageReduction;
 
-    public Player(string name, int health, int attackPower, float chanceToCriticalHit, Position currentPosition)
+    public Player(string name, int health, int attackPower, float chanceToCriticalHit, Position currentPosition) : base(name, health, attackPower, chanceToCriticalHit)
     {
-        Name = name;
-        Health = health;
-        BaseAttackPower = attackPower;
-        ChanceToCriticalHit = chanceToCriticalHit;
         Inventory = new List<Item>();
         CurrentPosition = currentPosition;
+    }
+
+    protected override void OnDeath()
+    {
+        Console.WriteLine("Byl jsi poražen! Konec hry.");
     }
 }
