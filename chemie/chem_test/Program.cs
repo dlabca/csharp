@@ -18,7 +18,7 @@ class ChemickaZkouska
 { "Pt", "Platina" },
 { "I", "Jód" },
 { "N", "Dusík" },
-{ "Ti", "Titan" },                    
+{ "Ti", "Titan" },
 { "S", "Síra" },
 { "Be", "Beryllium"},
 { "P", "Fosfor" },
