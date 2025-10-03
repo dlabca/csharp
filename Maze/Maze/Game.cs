@@ -9,6 +9,7 @@ namespace Maze
 {
     public class Game : Microsoft.Xna.Framework.Game
     {
+        StreamWriter sw;
         public const int CellSize = 20;
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
@@ -16,7 +17,7 @@ namespace Maze
         private Texture2D texture;
 
         int width, height;
-        
+
         Cell[,] maze;
 
         public Game()
@@ -35,14 +36,16 @@ namespace Maze
 
             width = GraphicsDevice.Viewport.Width;
             height = GraphicsDevice.Viewport.Height;
+            sw = new StreamWriter("maze.html");
+            sw.WriteLine($"<svg width=\"{width}\" height=\"{height}\">");
 
-            maze = new Cell[width / CellSize,height / CellSize];
+            maze = new Cell[width / CellSize, height / CellSize];
 
             for (int i = 0; i < maze.GetLength(0); i++)
             {
                 for (int j = 0; j < maze.GetLength(1); j++)
                 {
-                    maze[i,j] = new Cell(maze,i, j);
+                    maze[i, j] = new Cell(maze, i, j);
                 }
             }
 
@@ -55,7 +58,8 @@ namespace Maze
             {
                 current = stack.Pop();
                 Cell neighbor = current.GetNejghbour();
-                if (neighbor != null) {
+                if (neighbor != null)
+                {
                     stack.Push(current);
                     current.BreakWall(neighbor);
                     neighbor.visited = true;
@@ -63,7 +67,15 @@ namespace Maze
                 }
             }
 
-
+            for (int i = 0; i < maze.GetLength(0); i++)
+            {
+                for (int j = 0; j < maze.GetLength(1); j++)
+                {
+                    maze[i, j].Draw(this);
+                }
+            }
+            sw.WriteLine("</svg>");
+            sw.Close();
             base.Initialize();
         }
 
@@ -86,6 +98,7 @@ namespace Maze
 
         protected override void Draw(GameTime gameTime)
         {
+            return;
             GraphicsDevice.Clear(Color.CornflowerBlue);
 
             _spriteBatch.Begin();
@@ -94,7 +107,7 @@ namespace Maze
             {
                 for (int j = 0; j < maze.GetLength(1); j++)
                 {
-                    maze[i,j].Draw(this);
+                    maze[i, j].Draw(this);
                 }
             }
 
@@ -105,7 +118,8 @@ namespace Maze
 
         public void DrawRect(int x, int y, int width, int height)
         {
-            _spriteBatch.Draw(texture, new Rectangle(x, y, width, height), Color.Black);
+            sw.WriteLine($"<line x1=\"{x}\" y1=\"{y}\" x2=\"{x + width}\" y2=\"{y + height}\" stroke=\"black\" stroke-width=\"2\"/>");
+            // _spriteBatch.Draw(texture, new Rectangle(x, y, width, height), Color.Black);
         }
     }
 }
