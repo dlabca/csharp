@@ -7,7 +7,7 @@ class Client
 {
     static void Main()
     {
-        const string serverIp = "192.168.0.147"; // Zadejte IP serveru
+        const string serverIp = "192.168.0.193"; // Zadejte IP serveru
         const int port = 12345;
 
         try

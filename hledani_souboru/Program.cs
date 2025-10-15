@@ -10,7 +10,7 @@ class Program
     static void Main()
     {
         // Pole hledaných výrazů
-        string[] searchTerms = {"projekt"};  // Zadejte více hledaných slov
+        string[] searchTerms = {".md"};  // Zadejte více hledaných slov
 
         // Získejte všechny logické disky v systému
         foreach (var drive in DriveInfo.GetDrives())
@@ -45,14 +45,23 @@ class Program
                     }
                 }
 
-                try
-                {
-                    SearchFilesAndFolders(directory, searchTerms);
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    Console.WriteLine($"Přístup ke složce odepřen: {directory}");
-                }
+                    // Pokud je to "Program Files" nebo "Program Files (x86)", přeskočíme prohledávání
+                    string lowerDir = directory.ToLowerInvariant();
+                    if (lowerDir.StartsWith(Path.Combine(Path.GetPathRoot(directory) ?? string.Empty, "Program Files").ToLowerInvariant())
+                        || lowerDir.StartsWith(Path.Combine(Path.GetPathRoot(directory) ?? string.Empty, "Program Files (x86)").ToLowerInvariant()))
+                    {
+                        Console.WriteLine($"Přeskakuji systémovou složku: {directory}");
+                        continue;
+                    }
+
+                    try
+                    {
+                        SearchFilesAndFolders(directory, searchTerms);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        Console.WriteLine($"Přístup ke složce odepřen: {directory}");
+                    }
             }
 
             // Prohledá soubory

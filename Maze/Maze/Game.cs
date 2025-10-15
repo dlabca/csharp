@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Input;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection.Metadata;
 
 namespace Maze
 {
@@ -16,9 +17,10 @@ namespace Maze
 
         private Texture2D texture;
 
-        int width, height;
+        public int width, height;
 
         Cell[,] maze;
+        public bool IsSvgGenerated = false;
 
         public Game()
         {
@@ -36,8 +38,7 @@ namespace Maze
 
             width = GraphicsDevice.Viewport.Width;
             height = GraphicsDevice.Viewport.Height;
-            sw = new StreamWriter("maze.html");
-            sw.WriteLine($"<svg width=\"{width}\" height=\"{height}\">");
+
 
             maze = new Cell[width / CellSize, height / CellSize];
 
@@ -71,11 +72,10 @@ namespace Maze
             {
                 for (int j = 0; j < maze.GetLength(1); j++)
                 {
-                    maze[i, j].Draw(this);
+                    //maze[i, j].Draw(this);
                 }
             }
-            sw.WriteLine("</svg>");
-            sw.Close();
+
             base.Initialize();
         }
 
@@ -98,10 +98,15 @@ namespace Maze
 
         protected override void Draw(GameTime gameTime)
         {
-            return;
             GraphicsDevice.Clear(Color.CornflowerBlue);
 
             _spriteBatch.Begin();
+            if (!IsSvgGenerated)
+            {
+                sw = new StreamWriter("maze.svg");
+                sw.WriteLine($"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\">");
+            }
+
 
             for (int i = 0; i < maze.GetLength(0); i++)
             {
@@ -110,6 +115,14 @@ namespace Maze
                     maze[i, j].Draw(this);
                 }
             }
+            if (!IsSvgGenerated)
+            {
+                sw.WriteLine($"<rect x=\"0\" y=\"0\" width=\"{width}\" height=\"{height}\" fill=\"none\" stroke=\"blue\" stroke-width=\"5\"/>");
+                sw.WriteLine("</svg>");
+                sw.Close();
+                IsSvgGenerated = true;
+            }
+
 
             _spriteBatch.End();
 
@@ -118,8 +131,12 @@ namespace Maze
 
         public void DrawRect(int x, int y, int width, int height)
         {
-            sw.WriteLine($"<line x1=\"{x}\" y1=\"{y}\" x2=\"{x + width}\" y2=\"{y + height}\" stroke=\"black\" stroke-width=\"2\"/>");
-            // _spriteBatch.Draw(texture, new Rectangle(x, y, width, height), Color.Black);
+            //sw.WriteLine($"<line x1=\"{x}\" y1=\"{y}\" x2=\"{x + width}\" y2=\"{y + height}\" stroke=\"black\" stroke-width=\"2\"/>");
+            _spriteBatch.Draw(texture, new Rectangle(x, y, width, height), Color.Black);
+        }
+        public void SvgDrawLine(int x1, int y1, int x2, int y2)
+        {
+            sw.WriteLine($"<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"2\"/>");
         }
     }
 }

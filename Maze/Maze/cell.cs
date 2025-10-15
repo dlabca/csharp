@@ -20,13 +20,47 @@ namespace Maze
         {
             int size = Game.CellSize;
             if (walls[0])
+            {
                 g.DrawRect(x * size, y * size, size, 1);
+            }
+
             if (walls[1])
+            {
                 g.DrawRect((x + 1) * size, y * size, 1, size);
+            }
+
             if (walls[2])
+            {
                 g.DrawRect(x * size, (y + 1) * size, size, 1);
+            }
+
             if (walls[3])
+            {
                 g.DrawRect(x * size, y * size, 1, size);
+            }
+            if (!(g.IsSvgGenerated))
+            {
+                if (walls[0])
+                {
+                    g.SvgDrawLine(x * size, y * size,x * size + size, y * size + 1);
+                }
+
+                if (walls[1])
+                {
+                    g.SvgDrawLine((x + 1) * size, y * size, (x + 1) * size + 1, y * size + size);
+                }
+
+                if (walls[2])
+                {
+                    g.SvgDrawLine(x * size, (y + 1) * size, x * size + size, (y + 1) * size + 1);
+                }
+
+                if (walls[3])
+                {
+                    g.SvgDrawLine(x * size, y * size, x * size + 1, y * size + size);
+                }
+            }
+
         }
         public Cell GetNejghbour()
         {

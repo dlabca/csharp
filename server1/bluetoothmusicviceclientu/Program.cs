@@ -74,7 +74,7 @@ class BluetoothServer
 
     static void InitializeMusicLibrary()
     {
-        musicLibrary["song1"] = @"C:\Users\kryst\OneDrive\Dokumenty\programování\JavaSkript\C#\server1\consolemusicviceclientu\server\beautiful-day-official-music-video.mp3";
+        musicLibrary["song1"] = @"C:\Users\kryst\OneDrive\Dokumenty\programování\csharp\server1\consolemusicviceclientu\server\beautiful-day-official-music-video.mp3";
     }
 
     public static void PlayMusic(string shortcut)
