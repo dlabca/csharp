@@ -5,7 +5,10 @@ class Game
     public int mapWidth = 5;
     public int mapHeight = 5;
 
-    Random random = new Random();
+    public static bool Chance(float chance)
+    {
+        return Random.Shared.NextDouble() < chance;
+    }
 
     public void Start()
     {
@@ -168,40 +171,8 @@ class Game
             switch (answer)
             {
                 case "utočit":
-                    int damage;
-                    damage = playerDamage;
-                    if (Chance(playerCriticalChance))
-                    {
-                        damage *= 2;
-                        Console.WriteLine($"Útočíte na {enemy.Name}! Způsobili jste KRITICKÝ zásah za {damage} poškození!");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Útočíte na {enemy.Name}! Způsobili jste {damage} poškození!");
-                    }
-                    enemy.Health -= damage;
-                    if (enemy.Health <= 0)
-                    {
-                        Console.WriteLine($"Porazili jste {enemy.Name}!");
-                        player.CurrentRoom.Enemies.Remove(enemy);
-                        return;
-                    }
-                    damage = enemyDamage;
-                    if (Chance(enemyCriticalChance))
-                    {
-                        damage *= 2;
-                        Console.WriteLine($"{enemy.Name} útočí! Způsobil KRITICKÝ zásah za {damage} poškození!");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"{enemy.Name} útočí! Způsobil {damage} poškození!");
-                    }
-                    player.Health -= Math.Max(0, damage - playerdamagereduction);
-                    if (player.Health <= 0)
-                    {
-                        Console.WriteLine("Byl jsi poražen! Konec hry.");
-                        return;
-                    }
+                    player.Attack(enemy);
+                    enemy.Attack(player);
                     break;
                 case "úhyb":
                     if (Chance(0.75f))
@@ -209,9 +180,8 @@ class Game
 
                         if (Chance(0.3f))
                         {
-                            damage = playerDamage;
-                            enemy.Health -= damage;
-                            Console.WriteLine($"Úspěšně jste se vyhnuli útoku a provedli protiútok za {damage} poškození!");
+                            player.Attack(enemy);
+                            Console.WriteLine($"Úspěšně jste se vyhnuli útoku a provedli protiútok za {player.AttackPower} poškození!");
                         }
                         else
                         {
@@ -221,26 +191,11 @@ class Game
                     else
                     {
                         Console.WriteLine("úhyb se nepovedl");
-                        damage = enemyDamage;
-                        if (Chance(enemyCriticalChance))
-                        {
-                            damage *= 2;
-                            Console.WriteLine($"Úhyb se nepovedl. {enemy.Name} zasáhl kriticky za {damage - playerdamagereduction} poškození!");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Úhyb se nepovedl. {enemy.Name} zasáhl za {damage - playerdamagereduction} poškození!");
-                        }
-                        player.Health -= Math.Max(0, damage - playerdamagereduction);
-                        if (player.Health <= 0)
-                        {
-                            Console.WriteLine("Byl jsi poražen! Konec hry.");
-                            return;
-                        }
+                        enemy.Attack(player);
                     }
                     break;
                 case "bránit":
-                    damage = enemyDamage;
+                    int damage = enemyDamage;
                     if (Chance(enemyCriticalChance))
                     {
                         damage *= 2;
@@ -262,11 +217,6 @@ class Game
                     break;
             }
         }
-        bool Chance(float chance)
-        {
-            return random.NextDouble() < chance;
-        }
-
     }
     void MovePlayer(string direction)
     {
@@ -373,7 +323,7 @@ class Game
         Console.WriteLine("  vezmi [název] - vezme předmět z místnosti do inventáře");
         Console.WriteLine("  použij [název] - použije předmět z inventáře (např. lektvar, zbroj, zbraň)");
         Console.WriteLine("  inventar - zobrazí inventář hráče");
-        Console.WriteLine("  statystiky - zobrazí statistiky hráče (zdraví, výbava, síla)");
+        Console.WriteLine("  statistiky - zobrazí statistiky hráče (zdraví, výbava, síla)");
         Console.WriteLine("  konec / exit - ukončí hru");
         Console.WriteLine();
         Console.WriteLine("Stiskněte libovolnou klávesu pro pokračování...");

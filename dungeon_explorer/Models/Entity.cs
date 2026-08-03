@@ -1,3 +1,5 @@
+using static Game;
+
 abstract class Entity
 {
     public string Name { get; set; }
@@ -31,6 +33,25 @@ abstract class Entity
         if (Health < 0)
         {
             OnDeath();
+        }
+    }
+
+    public void Attack(Entity other)
+    {
+        int damage = AttackPower;
+        if (Chance(ChanceToCriticalHit))
+        {
+            damage *= 2;
+            Console.WriteLine($"{Name} útočí na {other.Name}! Způsobil KRITICKÝ zásah za {damage} poškození!");
+        }
+        else
+        {
+            Console.WriteLine($"{Name} útočí na {other.Name}! Způsobil {damage} poškození!");
+        }
+        other.Health -= Math.Max(0,damage - other.DamageReduction);
+        if (other.Health <= 0)
+        {
+            other.OnDeath();
         }
     }
 }

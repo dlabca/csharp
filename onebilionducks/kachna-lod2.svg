@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="100%" height="100%">
+    <!-- Bílé pozadí pro vizualizaci (smazat pro hru) -->
+    <rect width="1000" height="500" fill="#ffffff" />
+    <!-- GEOMETRICKÝ CELEK 1: LEVÉ KŘÍDLO (4 TROJÚHELNÍKY) -->
+    <g id="left-wing">
+        <!-- 1. Vnitřní křídlo / rameno (šedo-hnědá) -->
+        <polygon points="465,190 220,200 500,285" fill="#52463e" />
+    </g>
+
+    <!-- GEOMETRICKÝ CELEK 2: PRAVÉ KŘÍDLO (4 TROJÚHELNÍKY) -->
+    <g id="right-wing">
+        <!-- 1. Vnitřní křídlo / rameno (šedo-hnědá) -->
+        <polygon points="535,190 780,200 500,285" fill="#52463e" />
+    </g>
+
+    <!-- GEOMETRICKÝ CELEK 3: TRUP (4 TROJÚHELNÍKY) -->
+    <g id="torso">
+        <!-- 10. Horní záda a střed těla (tmavší šedá) -->
+        <polygon points="465,190 535,190 500,340" fill="#423b34" />
+
+    </g>
+    <g id="head">
+        <!-- 13. Zelená hlava (špička) -->
+        <polygon points="500,120 476,190 524,190" fill="#005e38" />
+    </g>
+    <!-- GEOMETRICKÝ CELEK 4: HLAVA + OCAS (4 TROJÚHELNÍKY, 1 DRAW CALL) -->
+    <g id="tail">
+        <polygon points="440,360 560,360 500,285" fill="#898785" />
+    </g>
+
+</svg>

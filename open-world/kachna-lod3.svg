@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="100%" height="100%">
+    <!-- Bílé pozadí pro vizualizaci (smazat pro hru) -->
+    <rect width="1000" height="500" fill="#ffffff" />
+    <!-- GEOMETRICKÝ CELEK 1: LEVÉ KŘÍDLO (4 TROJÚHELNÍKY) -->
+    <g id="left-wing">
+        <!-- 1. Vnitřní křídlo / rameno (šedo-hnědá) -->
+        <polygon points="500,190 220,200 500,285" fill="#52463e" />
+    </g>
+
+    <!-- GEOMETRICKÝ CELEK 2: PRAVÉ KŘÍDLO (4 TROJÚHELNÍKY) -->
+    <g id="right-wing">
+        <!-- 1. Vnitřní křídlo / rameno (šedo-hnědá) -->
+        <polygon points="500,190 780,200 500,285" fill="#52463e" />
+    </g>
+</svg>

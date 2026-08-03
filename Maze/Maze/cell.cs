@@ -42,7 +42,7 @@ namespace Maze
             {
                 if (walls[0])
                 {
-                    g.SvgDrawLine(x * size, y * size,x * size + size, y * size + 1);
+                    g.SvgDrawLine(x * size, y * size, x * size + size, y * size + 1);
                 }
 
                 if (walls[1])

@@ -10,7 +10,7 @@ class Program
     static void Main()
     {
         // Pole hledaných výrazů
-        string[] searchTerms = {".md"};  // Zadejte více hledaných slov
+        string[] searchTerms = {"tothecore,to-the-core,To-The-Core,ToTheCore"};  // Zadejte více hledaných slov
 
         // Získejte všechny logické disky v systému
         foreach (var drive in DriveInfo.GetDrives())

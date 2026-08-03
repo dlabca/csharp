@@ -8,5 +8,6 @@ class Enemy : Entity
     protected override void OnDeath()
     {
         Console.WriteLine($"Porazili jste {Name}!");
+        Player.singleton.CurrentRoom.Enemies.Remove(this);
     }
 }

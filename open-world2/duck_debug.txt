@@ -1,0 +1,27 @@
+=== DUCK LOD DIAGNOSTICS ===
+Pozice hráče: {X:0 Y:15,690287 Z:80}
+Celkem kachen v LOD 0: 10000
+Celkem kachen v LOD 1: 0
+Celkem kachen v LOD 2: 0
+--------------------------------------------------
+PŘEHLED PRVNÍCH 20 KACHEN:
+Kachna [0]: Pozice=(3,2, 35,7, -28,9) | Vzdálenost=110,8m | Zařazeno do=LOD 1
+Kachna [1]: Pozice=(-8,6, 37,8, 43,5) | Vzdálenost=43,6m | Zařazeno do=LOD 0
+Kachna [2]: Pozice=(40,2, 16,0, -2,4) | Vzdálenost=91,7m | Zařazeno do=LOD 0
+Kachna [3]: Pozice=(155,9, 60,3, -108,4) | Vzdálenost=248,6m | Zařazeno do=LOD 1
+Kachna [4]: Pozice=(-76,1, 35,6, 72,7) | Vzdálenost=79,0m | Zařazeno do=LOD 0
+Kachna [5]: Pozice=(-71,2, 62,4, -105,8) | Vzdálenost=204,3m | Zařazeno do=LOD 1
+Kachna [6]: Pozice=(209,7, 25,4, -306,7) | Vzdálenost=440,0m | Zařazeno do=LOD 2
+Kachna [7]: Pozice=(3,8, 35,9, 103,6) | Vzdálenost=31,3m | Zařazeno do=LOD 0
+Kachna [8]: Pozice=(-108,6, 87,1, 80,8) | Vzdálenost=130,0m | Zařazeno do=LOD 1
+Kachna [9]: Pozice=(233,0, 26,0, -303,0) | Vzdálenost=448,5m | Zařazeno do=LOD 2
+Kachna [10]: Pozice=(-405,7, 57,6, 73,4) | Vzdálenost=407,9m | Zařazeno do=LOD 2
+Kachna [11]: Pozice=(-9,3, 57,9, -24,6) | Vzdálenost=113,2m | Zařazeno do=LOD 1
+Kachna [12]: Pozice=(344,0, 56,2, -87,4) | Vzdálenost=384,6m | Zařazeno do=LOD 2
+Kachna [13]: Pozice=(20,5, 20,9, -124,3) | Vzdálenost=205,4m | Zařazeno do=LOD 1
+Kachna [14]: Pozice=(-23,5, 15,4, 0,8) | Vzdálenost=82,6m | Zařazeno do=LOD 0
+Kachna [15]: Pozice=(-46,7, 37,1, -37,4) | Vzdálenost=128,2m | Zařazeno do=LOD 1
+Kachna [16]: Pozice=(-202,8, 64,0, -237,5) | Vzdálenost=379,8m | Zařazeno do=LOD 2
+Kachna [17]: Pozice=(26,9, 65,5, 38,8) | Vzdálenost=70,0m | Zařazeno do=LOD 0
+Kachna [18]: Pozice=(-35,9, 64,9, 22,3) | Vzdálenost=83,9m | Zařazeno do=LOD 0
+Kachna [19]: Pozice=(35,7, 22,0, -113,0) | Vzdálenost=196,3m | Zařazeno do=LOD 1

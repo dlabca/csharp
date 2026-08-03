@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <ApplicationId>com.companyname.openworldandroid</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+
+    <JavaSdkDirectory>C:\Program Files\Microsoft\jdk-21.0.12.8-hotspot</JavaSdkDirectory>
+    <AndroidSdkDirectory>C:\Users\kryst\AppData\Local\Android\Sdk</AndroidSdkDirectory>
+
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+
+    <!-- Obě sady najednou = funguje to jak v x86_64 emulátoru, tak na reálném
+         ARM telefonu, bez potřeby cokoliv přehazovat mezi testováním v emulátoru
+         a nahráváním na telefon. Trochu to zvětší velikost APK, ale pro vývoj
+         je to jednodušší než se v tom ztrácet. -->
+    <AndroidSupportedAbis>arm64-v8a;armeabi-v7a;x86_64</AndroidSupportedAbis>
+
+    <!-- Fast Deployment (výchozí u Debug configu) nahrává C# assembly na zařízení
+         ZVLÁŠŤ mimo APK, kvůli rychlejšímu vývoji - ale pokud appku instaluješ
+         jinak než přesným "dotnet build -t:Run" (např. ruční instalace APK),
+         assembly se tam nedostanou a appka spadne hned po startu s
+         "No assemblies found ... Exiting". Tohle to vypne - vše půjde přímo do APK. -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.2.1105" />
+    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.2.1105" />
+
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\open-world\button.cs" />
+    <Compile Include="..\open-world\chunk.cs" />
+    <Compile Include="..\open-world\chunkManager.cs" />
+    <Compile Include="..\open-world\ChunkWater.cs" />
+    <Compile Include="..\open-world\DuckManager.cs" />
+    <Compile Include="..\open-world\DuckMeshGenerator.cs" />
+    <Compile Include="..\open-world\fastNoiseLite.cs" />
+    <Compile Include="..\open-world\Game1.cs" />
+    <Compile Include="..\open-world\input.cs" />
+    <Compile Include="..\open-world\MathExtensions.cs" />
+    <Compile Include="..\open-world\TerrainGenerator.cs" />
+    <Compile Include="..\open-world\GameEconomy.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Řekne projektu, kde najít hlavní konfigurační soubor obsahu -->
+    <MonoGameContentReference Include="..\open-world\Content\Content.mgcb" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AndroidAsset Include="..\open-world\Content\**\*" Link="Assets\Content\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Target Name="RestoreDotnetTools" BeforeTargets="Restore">
+    <Message Text="Restoring dotnet tools" Importance="High" />
+    <Exec Command="dotnet tool restore" />
+  </Target>
+</Project>

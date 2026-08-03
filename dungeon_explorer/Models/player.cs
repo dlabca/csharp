@@ -6,10 +6,13 @@ class Player : Entity
     public Room CurrentRoom { get; set; }
     public Position CurrentPosition { get; set; }
 
+    public static Player singleton;
+
     public override int DamageReduction => EquippedArmor?.DamageReduction ?? base.DamageReduction;
 
     public Player(string name, int health, int attackPower, float chanceToCriticalHit, Position currentPosition) : base(name, health, attackPower, chanceToCriticalHit)
     {
+        singleton = this;
         Inventory = new List<Item>();
         CurrentPosition = currentPosition;
     }

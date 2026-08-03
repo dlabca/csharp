@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="100%" height="100%">
+    <!-- Bílé pozadí pro vizualizaci (smazat pro hru) -->
+    <rect width="1000" height="500" fill="#ffffff" />
+    <!-- GEOMETRICKÝ CELEK 1: LEVÉ KŘÍDLO (4 TROJÚHELNÍKY) -->
+    <g id="left-wing">
+        <!-- 1. Vnitřní křídlo / rameno (šedo-hnědá) -->
+        <polygon points="465,190 320,200 500,285" fill="#706357" />
+        <!-- 2. Vnější křídlo ke špičce (hnědá letky) -->
+        <polygon points="320,200 60,185 250,270" fill="#52463e" />
+        <!-- 3. Modré zrcátko -->
+        <polygon points="320,200 250,270 500,285" fill="#1b5287" />
+    </g>
+
+    <!-- GEOMETRICKÝ CELEK 2: PRAVÉ KŘÍDLO (4 TROJÚHELNÍKY) -->
+    <g id="right-wing">
+        <!-- 1. Vnitřní křídlo / rameno (šedo-hnědá) -->
+        <polygon points="535,190 680,200 500,285" fill="#706357" />
+        <!-- 2. Vnější křídlo ke špičce (hnědá letky) -->
+        <polygon points="680,200 940,185 750,270" fill="#52463e" />
+        <!-- 3. Modré zrcátko -->
+        <polygon points="680,200 750,270 500,285" fill="#1b5287" />
+    </g>
+
+    <!-- GEOMETRICKÝ CELEK 3: TRUP (4 TROJÚHELNÍKY) -->
+    <g id="torso">
+        <!-- 9. Hruď a náběh krku (kaštanová) -->
+        <polygon points="500,140 465,190 535,190" fill="#4d3226" />
+        <!-- 10. Horní záda a střed těla (tmavší šedá) -->
+        <polygon points="465,190 535,190 500,340" fill="#423b34" />
+        <polygon points="465,330 535,330 500,285" fill="#211E1A" />
+    </g>
+    <g id="head">
+        <!-- 13. Zelená hlava (špička) -->
+        <polygon points="500,100 488,160 512,160" fill="#005e38" />
+    </g>
+    <!-- GEOMETRICKÝ CELEK 4: HLAVA + OCAS (4 TROJÚHELNÍKY, 1 DRAW CALL) -->
+    <g id="tail">
+        <polygon points="500,390 465,330 535,330" fill="#000" />
+        <!-- 15. Levý světlý ocasní vějíř -->
+        <polygon points="500,390 440,360 465,330" fill="#f0f0f0" />
+        <!-- 16. Pravý světlý ocasní vějíř -->
+        <polygon points="500,390 560,360 535,330" fill="#f0f0f0" />
+    </g>
+
+</svg>
