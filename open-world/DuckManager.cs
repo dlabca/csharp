@@ -13,7 +13,7 @@ namespace open_world
         public Vector2 FlapParams;
 
         public static readonly VertexDeclaration VertexDeclaration = new VertexDeclaration(
-            new VertexElement(0,  VertexElementFormat.Vector3, VertexElementUsage.Position, 1),
+            new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 1),
             new VertexElement(12, VertexElementFormat.Vector3, VertexElementUsage.Position, 2),
             new VertexElement(24, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
             new VertexElement(32, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 1)
@@ -68,6 +68,7 @@ namespace open_world
         private const float FlapAmplitude = 0.5f;
         private const float DuckScale = 1.5f;
         private const float DuckBoundingRadius = 8.0f;
+        public int Count => _ducks.Count;
 
         private readonly Random _sharedRandom = new Random();
 
@@ -549,5 +550,31 @@ namespace open_world
             _instanceBuffer?.Dispose();
             _culledDrawBuffer?.Dispose();
         }
+        public void GrowFlockTo(int newCount, float totalTime)
+        {
+            int oldCount = _ducks.Count;
+            if (newCount <= oldCount) return; // zmenšování neřešíme, jen růst
+
+            // Rozšíření CPU-side polí. Array.Resize zachová stará data, nová
+            // místa naplníme až v cyklu níž přes RecycleDuck (stejná cesta jako spawn).
+            Array.Resize(ref _instanceData, newCount);
+            Array.Resize(ref _culledInstanceData, newCount);
+
+            for (int i = oldCount; i < newCount; i++)
+            {
+                _ducks.Add(new DuckInstance { ChunkCoord = new Point(int.MinValue, int.MinValue) });
+                RecycleDuck(i, totalTime);
+            }
+
+            // GPU buffery musí mít pevnou kapacitu danou při vytvoření - není jak
+            // je "dorostit", takže staré zahodíme a vytvoříme nové, větší.
+            _instanceBuffer?.Dispose();
+            _instanceBuffer = new DynamicVertexBuffer(_graphicsDevice, DuckInstanceData.VertexDeclaration, newCount, BufferUsage.WriteOnly);
+            _instanceBuffer.SetData(_instanceData, 0, newCount, SetDataOptions.Discard);
+
+            _culledDrawBuffer?.Dispose();
+            _culledDrawBuffer = new DynamicVertexBuffer(_graphicsDevice, DuckInstanceData.VertexDeclaration, newCount, BufferUsage.WriteOnly);
+        }
+
     }
 }

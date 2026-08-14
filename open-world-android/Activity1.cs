@@ -79,6 +79,24 @@ namespace open_world_android
                 () => NativeInput.ShootPressedThisFrame = true);
             AddButton(overlay, "OBCHOD", GravityFlags.Top | GravityFlags.Left, 40, 40,
                 () => ShowShopDialog());
+            // V OnCreate, hned za všemi ostatními prvky (před SetContentView):
+            var crosshairView = new TextView(this)
+            {
+                Text = "+",
+                TextSize = 28f,
+                Gravity = GravityFlags.Center
+            };
+            crosshairView.SetTextColor(Android.Graphics.Color.White); // Nebo bílá
+            crosshairView.SetBackgroundColor(Android.Graphics.Color.Transparent);
+
+            // Důležité: ať neblokuje dotyky pro hru pod ním
+            crosshairView.Touch += (s, e) => { e.Handled = false; };
+
+            var crosshairParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MatchParent,
+                FrameLayout.LayoutParams.MatchParent);
+
+            overlay.AddView(crosshairView, crosshairParams);
 
             SetContentView(overlay);
 
@@ -159,39 +177,38 @@ namespace open_world_android
         }
         private void ShowShopDialog()
         {
-            string message =
-                $"Peníze: ${GameEconomy.Money}\n\n" +
-                $"Dosah: {GameEconomy.CurrentRange:0} m (tier {GameEconomy.RangeTier})\n" +
-                (GameEconomy.CanUpgradeRange ? $"Upgrade za ${GameEconomy.NextRangeCost}\n" : "Max úroveň\n") +
-                $"\nRozptyl: {GameEconomy.CurrentSpread:0}° (tier {GameEconomy.SpreadTier})\n" +
-                (GameEconomy.CanUpgradeSpread ? $"Upgrade za ${GameEconomy.NextSpreadCost}" : "Max úroveň");
+            // Připravíme si pole položek pro dialog
+            var upgrades = GameEconomy.Upgrades;
+            string[] options = new string[upgrades.Count];
+
+            for (int i = 0; i < upgrades.Count; i++)
+            {
+                var up = upgrades[i];
+                string costText = up.CanBuy() ? $"[${up.NextCost()}]" : "(MAX)";
+                options[i] = $"{up.Name}: {up.ValueText()}  {costText}";
+            }
 
             var builder = new AlertDialog.Builder(this);
-            builder.SetTitle("Obchod");
-            builder.SetMessage(message);
+            builder.SetTitle($"Obchod (Peníze: ${GameEconomy.Money})");
 
-            if (GameEconomy.CanUpgradeRange)
+            // Zobrazí seznam všech upgradů jako vybíratelná položková nabídka
+            builder.SetItems(options, (s, e) =>
             {
-                builder.SetPositiveButton($"Dosah (${GameEconomy.NextRangeCost})", (s, e) =>
+                int selectedIndex = e.Which;
+                if (selectedIndex >= 0 && selectedIndex < upgrades.Count)
                 {
-                    GameEconomy.TryBuyRangeUpgrade();
-                    ShowShopDialog(); // znovu otevřít se zaktualizovanými čísly
-                });
-            }
-
-            if (GameEconomy.CanUpgradeSpread)
-            {
-                builder.SetNegativeButton($"Rozptyl (${GameEconomy.NextSpreadCost})", (s, e) =>
-                {
-                    GameEconomy.TryBuySpreadUpgrade();
+                    var chosenUpgrade = upgrades[selectedIndex];
+                    if (chosenUpgrade.CanBuy())
+                    {
+                        chosenUpgrade.TryBuy();
+                    }
+                    // Dialog hned zase otevřeme aktualizovaný, aby hráč viděl nové peníze/tier
                     ShowShopDialog();
-                });
-            }
+                }
+            });
 
-            builder.SetNeutralButton("Zavřít", (s, e) => { });
-
+            builder.SetNegativeButton("Zavřít", (s, e) => { });
             builder.Show();
         }
-
     }
 }

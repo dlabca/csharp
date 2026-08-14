@@ -52,7 +52,8 @@ namespace open_world
         public enum GameState
         {
             Menu,
-            Playing
+            Playing,
+            Shop
         }
 
         private GameState _currentState = GameState.Menu;
@@ -76,7 +77,9 @@ namespace open_world
         private bool vsync = false;
         public const float minTerrainHeight = -8f;
         public const float maxTerrainHeight = 40f;
-
+#if !ANDROID
+        private DesktopShopUI _shopUI;
+#endif
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
@@ -168,7 +171,9 @@ namespace open_world
                 _currentState = GameState.Playing;
                 IsMouseVisible = false;
             }
-
+#if !ANDROID       
+            _shopUI = new DesktopShopUI(_font, _pixelTexture);
+#endif
         }
 
         protected override void Update(GameTime gameTime)
@@ -301,10 +306,34 @@ namespace open_world
 
                     GameEconomy.Money += killed * GameEconomy.DuckValue;
                 }
+                if (!Input.IsTouchPlatform && Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B))
+                {
+                    _currentState = GameState.Shop;
+                    IsMouseVisible = true;
+                }
+
 
                 _chunkManager.Update(_cameraPosition);
+                if (_duckManager.Count < GameEconomy.CurrentMaxDucks)
+                {
+                    _duckManager.GrowFlockTo(GameEconomy.CurrentMaxDucks, (float)gameTime.TotalGameTime.TotalSeconds);
+                }
+
                 _duckManager.Update((float)gameTime.ElapsedGameTime.TotalSeconds, (float)gameTime.TotalGameTime.TotalSeconds);
             }
+            else if (_currentState == GameState.Shop)
+            {
+                _shopUI.Update(Input.CurrentMouseState);
+
+                if (Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B) ||
+                    Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.Escape))
+                {
+                    _currentState = GameState.Playing;
+                    IsMouseVisible = false;
+                    Input.CenterMouse(Window);
+                }
+            }
+
 
             base.Update(gameTime);
         }
@@ -394,7 +423,23 @@ namespace open_world
 #if !ANDROID            
             _spriteBatch.DrawString(_font, $"FPS: {_currentFps}", new Vector2(10, 10), Color.White);
 #endif
+            if (_currentState == GameState.Playing)
+            {
+                // Crosshair - jednoduchý křížek uprostřed obrazovky
+                int cx = GraphicsDevice.Viewport.Width / 2;
+                int cy = GraphicsDevice.Viewport.Height / 2;
+                const int size = 10;
+                const int thickness = 2;
+
+                _spriteBatch.Draw(_pixelTexture, new Rectangle(cx - size, cy - thickness / 2, size * 2, thickness), Color.White);
+                _spriteBatch.Draw(_pixelTexture, new Rectangle(cx - thickness / 2, cy - size, thickness, size * 2), Color.White);
+            }
+
             _spriteBatch.End();
+            if (_currentState == GameState.Shop)
+            {
+                _shopUI.Draw(_spriteBatch, _roundedPanelTexture);
+            }
 
             base.Draw(gameTime);
         }

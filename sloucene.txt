@@ -1,0 +1,2412 @@
+===== SOUBOR: P:\open-world\button.cs =====
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using System;
+
+namespace open_world
+{
+    public class Button
+    {
+        public Rectangle Bounds { get; set; }
+        public string Text { get; set; }
+        
+        // Událost, která se zavolá při kliknutí
+        public event Action OnClick;
+
+        private bool _isHovered;
+        private bool _isPressed;
+
+        public Button(Rectangle bounds, string text)
+        {
+            Bounds = bounds;
+            Text = text;
+        }
+
+        public void Update(MouseState currentMouseState)
+        {
+            // Na touch platformách ignorujeme MouseState úplně a řešíme to přes
+            // Input.IsButtonTapped() - viz níže. Parametr necháváme kvůli zpětné
+            // kompatibilitě volání z Game1.cs (na desktopu funguje jako dřív).
+            if (Input.IsTouchPlatform)
+            {
+                UpdateTouch();
+                return;
+            }
+
+            Point mousePos = new Point(currentMouseState.X, currentMouseState.Y);
+
+            // Kontrola, zda je kurzor myši uvnitř tlačítka
+            _isHovered = Bounds.Contains(mousePos);
+
+            if (_isHovered)
+            {
+                // Zjistíme, zda uživatel stiskl a pustil levé tlačítko myši (tzv. Click)
+                if (currentMouseState.LeftButton == ButtonState.Pressed)
+                {
+                    _isPressed = true;
+                }
+                else if (_isPressed && currentMouseState.LeftButton == ButtonState.Released)
+                {
+                    _isPressed = false;
+                    OnClick?.Invoke(); // Vyvolání akce tlačítka
+                }
+            }
+            else
+            {
+                _isPressed = false;
+            }
+        }
+
+        // Touch verze - tap kdekoliv uvnitř Bounds = klik (na dotykovém displeji
+        // nedává smysl rozlišovat "hover", takže se to zjednoduší na press+release uvnitř).
+        private void UpdateTouch()
+        {
+            _isHovered = false;
+            _isPressed = false;
+
+            foreach (var touch in Microsoft.Xna.Framework.Input.Touch.TouchPanel.GetState())
+            {
+                Point touchPos = new Point((int)touch.Position.X, (int)touch.Position.Y);
+
+                if (!Bounds.Contains(touchPos)) continue;
+
+                if (touch.State == Microsoft.Xna.Framework.Input.Touch.TouchLocationState.Pressed ||
+                    touch.State == Microsoft.Xna.Framework.Input.Touch.TouchLocationState.Moved)
+                {
+                    _isPressed = true;
+                    _isHovered = true;
+                }
+                else if (touch.State == Microsoft.Xna.Framework.Input.Touch.TouchLocationState.Released)
+                {
+                    OnClick?.Invoke();
+                }
+            }
+        }
+
+        public void Draw(SpriteBatch spriteBatch, SpriteFont font, Texture2D pixelTexture)
+        {
+            // Změna barvy podle stavu (vymezení: normální / najetí myší / stisknutí)
+            Color backgroundColor = Color.DarkSlateGray;
+            if (_isPressed)
+                backgroundColor = Color.Black;
+            else if (_isHovered)
+                backgroundColor = Color.DimGray;
+
+            // 1. Nakreslení pozadí tlačítka
+            spriteBatch.Draw(pixelTexture, Bounds, backgroundColor);
+
+            // 2. Nakreslení rámečku tlačítka (volitelné)
+            Color borderColor = _isHovered ? Color.Yellow : Color.White;
+            DrawBorder(spriteBatch, pixelTexture, Bounds, 2, borderColor);
+
+            // 3. Vycentrování textu uvnitř tlačítka
+            if (font != null && !string.IsNullOrEmpty(Text))
+            {
+                Vector2 textSize = font.MeasureString(Text);
+                Vector2 textPosition = new Vector2(
+                    MathF.Round(Bounds.X + (Bounds.Width - textSize.X) / 2),
+                    MathF.Round(Bounds.Y + (Bounds.Height - textSize.Y) / 2)
+                );
+
+                spriteBatch.DrawString(font, Text, textPosition, Color.White);
+            }
+        }
+
+        private void DrawBorder(SpriteBatch spriteBatch, Texture2D pixel, Rectangle rect, int thickness, Color color)
+        {
+            spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Y, rect.Width, thickness), color); // Horní
+            spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Y + rect.Height - thickness, rect.Width, thickness), color); // Dolní
+            spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Y, thickness, rect.Height), color); // Levá
+            spriteBatch.Draw(pixel, new Rectangle(rect.X + rect.Width - thickness, rect.Y, thickness, rect.Height), color); // Pravá
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world\chunk.cs =====
+using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace open_world
+{
+    public class Chunk
+    {
+        public const float ChunkWorldSize = 512f;
+        public const int GridResolution = 128;
+
+        public Point Position { get; private set; }
+        public VertexBuffer VertexBuffer { get; private set; }
+        public IndexBuffer IndexBuffer { get; private set; }
+        public int IndexCount { get; private set; }
+
+        // KONSTRUKTOR: Už NEPOČÍTÁ matematiku. Jen vezme hotová data a hodí je do GPU.
+        // Běží na hlavním vlákně a trvá 0.0001 ms!
+        public Chunk(GraphicsDevice device, Point chunkPos, TerrainVertex[] vertices, int[] indices)
+        {
+            Position = chunkPos;
+
+            VertexBuffer = new VertexBuffer(device, TerrainVertex.VertexDeclaration, vertices.Length, BufferUsage.WriteOnly);
+            VertexBuffer.SetData(vertices);
+
+            IndexCount = indices.Length;
+            IndexBuffer = new IndexBuffer(device, IndexElementSize.ThirtyTwoBits, IndexCount, BufferUsage.WriteOnly);
+            IndexBuffer.SetData(indices);
+        }
+
+        // TOTO BĚŽÍ NA VEDLEJŠÍM JÁDŘE (Mimo hlavní vlákno):
+        // Všechna ta těžká matematika, výpočty Heights a výpočty normál.
+        public static (TerrainVertex[] vertices, int[] indices) GenerateMeshData(Point chunkPos)
+        {
+            int numVertices = (GridResolution + 1) * (GridResolution + 1);
+            TerrainVertex[] vertices = new TerrainVertex[numVertices];
+            List<int> indices = new List<int>();
+
+            float startWorldX = chunkPos.X * ChunkWorldSize;
+            float startWorldZ = chunkPos.Y * ChunkWorldSize;
+            float step = ChunkWorldSize / GridResolution;
+
+            for (int z = 0; z <= GridResolution; z++)
+            {
+                for (int x = 0; x <= GridResolution; x++)
+                {
+                    float worldX = startWorldX + (x * step);
+                    float worldZ = startWorldZ + (z * step);
+
+                    float height = TerrainGenerator.GetHeight(worldX, worldZ);
+
+                    Color color;
+                    if (height < 0.0f)
+                        color = new Color(140, 120, 80);
+                    else if (height < 2.5f)
+                        color = new Color(210, 190, 130);
+                    else if (height < 25.0f)
+                        color = new Color(60, 140, 50);
+                    else
+                        color = new Color(100, 100, 100);
+
+                    float hL = TerrainGenerator.GetHeight(worldX - step, worldZ);
+                    float hR = TerrainGenerator.GetHeight(worldX + step, worldZ);
+                    float hD = TerrainGenerator.GetHeight(worldX, worldZ - step);
+                    float hU = TerrainGenerator.GetHeight(worldX, worldZ + step);
+                    Vector3 normal = Vector3.Normalize(new Vector3(hL - hR, 2.0f, hD - hU));
+
+                    int index = z * (GridResolution + 1) + x;
+                    vertices[index].Position = new Vector3(worldX, height, worldZ);
+                    vertices[index].Color = color;
+                    vertices[index].Normal = normal;
+                }
+            }
+
+            for (int z = 0; z < GridResolution; z++)
+            {
+                for (int x = 0; x < GridResolution; x++)
+                {
+                    int row1 = z * (GridResolution + 1);
+                    int row2 = (z + 1) * (GridResolution + 1);
+
+                    int topLeft = row1 + x;
+                    int topRight = row1 + x + 1;
+                    int bottomLeft = row2 + x;
+                    int bottomRight = row2 + x + 1;
+
+                    indices.Add(topLeft);
+                    indices.Add(topRight);
+                    indices.Add(bottomLeft);
+
+                    indices.Add(topRight);
+                    indices.Add(bottomRight);
+                    indices.Add(bottomLeft);
+                }
+            }
+
+            return (vertices, indices.ToArray());
+        }
+
+        public void Draw(GraphicsDevice device, BasicEffect terrainEffect)
+        {
+            device.SetVertexBuffer(VertexBuffer);
+            device.Indices = IndexBuffer;
+
+            foreach (EffectPass pass in terrainEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                device.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, IndexCount / 3);
+            }
+        }
+
+        public void Unload()
+        {
+            VertexBuffer?.Dispose();
+            IndexBuffer?.Dispose();
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world\chunkManager.cs =====
+using System;
+using System.Collections.Concurrent; // Bezpečná fronta pro předávání dat mezi jádry
+using System.Collections.Generic;
+using System.Threading.Tasks; // Pro běh na vedlejším jádře (Task.Run)
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace open_world
+{
+    public class ChunkManager
+    {
+        private GraphicsDevice _graphicsDevice;
+        private Dictionary<Point, Chunk> _loadedChunks = new Dictionary<Point, Chunk>();
+
+        // Kolekce pro asynchronní načítání na pozadí:
+        private HashSet<Point> _loadingChunks = new HashSet<Point>();
+        private ConcurrentQueue<ChunkData> _completedChunks = new ConcurrentQueue<ChunkData>();
+
+        private VertexBuffer _waterVertexBuffer;
+        private IndexBuffer _waterIndexBuffer;
+
+        // NOVÉ: DuckManager se na tohle napojí, aby věděl, kdy má recyklovat kachny
+        // z chunku, co právě zmizel z paměti.
+        public event Action<Point> ChunkUnloaded;
+
+        // NOVÉ: DuckManager potřebuje vědět, co je AKTUÁLNĚ načtené (pro pohybové
+        // hranice kachen a pro výběr cíle při recyklaci).
+        public IEnumerable<Point> LoadedChunkCoords => _loadedChunks.Keys;
+
+        // Pomocná přepravka dat z vedlejšího jádra
+        private struct ChunkData
+        {
+            public Point Coord;
+            public TerrainVertex[] Vertices;
+            public int[] Indices;
+        }
+
+        public ChunkManager(GraphicsDevice device, int seed)
+        {
+            _graphicsDevice = device;
+            TerrainGenerator.InitNoise(seed);
+            CreateGlobalWaterMesh();
+        }
+
+        private void CreateGlobalWaterMesh()
+        {
+            float waterSize = Chunk.ChunkWorldSize * 5f;
+            float halfSize = waterSize / 2f;
+
+            Color waterColor = new Color(30, 130, 210, 160);
+
+            VertexPositionColor[] vertices = new VertexPositionColor[4]
+            {
+                new VertexPositionColor(new Vector3(-halfSize, 0f, -halfSize), waterColor),
+                new VertexPositionColor(new Vector3(halfSize, 0f, -halfSize), waterColor),
+                new VertexPositionColor(new Vector3(-halfSize, 0f, halfSize), waterColor),
+                new VertexPositionColor(new Vector3(halfSize, 0f, halfSize), waterColor)
+            };
+
+            short[] indices = new short[6] { 0, 1, 2, 2, 1, 3 };
+
+            _waterVertexBuffer = new VertexBuffer(_graphicsDevice, typeof(VertexPositionColor), 4, BufferUsage.WriteOnly);
+            _waterVertexBuffer.SetData(vertices);
+
+            _waterIndexBuffer = new IndexBuffer(_graphicsDevice, IndexElementSize.SixteenBits, 6, BufferUsage.WriteOnly);
+            _waterIndexBuffer.SetData(indices);
+        }
+
+        public void Update(Vector3 playerPosition, bool isFirstLoad = false)
+        {
+            // Pokud je to úplně první načtení (např. v menu/LoadContent),
+            // vygenerujeme základní 3x3 okolí přímo a hned bez vedlejšího vlákna,
+            // aby byl terén okamžitě vidět pod vodou!
+            if (isFirstLoad)
+            {
+                int startX = (int)MathF.Floor(playerPosition.X / Chunk.ChunkWorldSize);
+                int startZ = (int)MathF.Floor(playerPosition.Z / Chunk.ChunkWorldSize);
+
+                for (int x = -1; x <= 1; x++)
+                {
+                    for (int z = -1; z <= 1; z++)
+                    {
+                        Point chunkCoord = new Point(startX + x, startZ + z);
+                        if (!_loadedChunks.ContainsKey(chunkCoord))
+                        {
+                            // Vygenerujeme data ihned
+                            var (vertices, indices) = Chunk.GenerateMeshData(chunkCoord);
+                            Chunk newChunk = new Chunk(_graphicsDevice, chunkCoord, vertices, indices);
+                            _loadedChunks.Add(chunkCoord, newChunk);
+                        }
+                    }
+                }
+                return; // Hotovo, první 3x3 terén je okamžitě v paměti GPU
+            }
+
+            // --- Zbytek kódu pro plynulé asynchronní načítání za běhu hry ---
+
+            // 1. Převzetí hotových chunků z vedlejšího jádra
+            while (_completedChunks.TryDequeue(out ChunkData completedData))
+            {
+                _loadingChunks.Remove(completedData.Coord);
+
+                if (!_loadedChunks.ContainsKey(completedData.Coord))
+                {
+                    Chunk newChunk = new Chunk(_graphicsDevice, completedData.Coord, completedData.Vertices, completedData.Indices);
+                    _loadedChunks.Add(completedData.Coord, newChunk);
+                }
+            }
+
+            // 2. Požadavek na nové chunky
+            int currentChunkX = (int)MathF.Floor(playerPosition.X / Chunk.ChunkWorldSize);
+            int currentChunkZ = (int)MathF.Floor(playerPosition.Z / Chunk.ChunkWorldSize);
+
+            List<Point> requiredChunkCoords = new List<Point>();
+
+            for (int x = -1; x <= 1; x++)
+            {
+                for (int z = -1; z <= 1; z++)
+                {
+                    Point chunkCoord = new Point(currentChunkX + x, currentChunkZ + z);
+                    requiredChunkCoords.Add(chunkCoord);
+
+                    if (!_loadedChunks.ContainsKey(chunkCoord) && !_loadingChunks.Contains(chunkCoord))
+                    {
+                        _loadingChunks.Add(chunkCoord);
+
+                        Task.Run(() =>
+                        {
+                            try
+                            {
+                                var (vertices, indices) = Chunk.GenerateMeshData(chunkCoord);
+
+                                _completedChunks.Enqueue(new ChunkData
+                                {
+                                    Coord = chunkCoord,
+                                    Vertices = vertices,
+                                    Indices = indices
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Chyba pri generovani chunku: {ex.Message}");
+                            }
+                        });
+                    }
+                }
+            }
+
+            // 3. Odstranění nepotřebných chunků
+            List<Point> chunksToRemove = new List<Point>();
+            foreach (var key in _loadedChunks.Keys)
+            {
+                if (!requiredChunkCoords.Contains(key))
+                {
+                    chunksToRemove.Add(key);
+                }
+            }
+
+            foreach (var key in chunksToRemove)
+            {
+                _loadedChunks[key].Unload();
+                _loadedChunks.Remove(key);
+                ChunkUnloaded?.Invoke(key); // NOVÉ: dej vědět DuckManageru (a komukoliv dalšímu)
+            }
+        }
+
+        public void Draw(BasicEffect terrainEffect, BasicEffect waterEffect, Vector3 playerPosition)
+        {
+            // 1. Zaručíme plný neprůhledný režim pro terén
+            _graphicsDevice.DepthStencilState = DepthStencilState.Default;
+            _graphicsDevice.BlendState = BlendState.Opaque;
+
+            // Vykreslení všech aktuálně načtených chunků terénu
+            foreach (var chunk in _loadedChunks.Values)
+            {
+                chunk.Draw(_graphicsDevice, terrainEffect);
+            }
+
+            // 2. Přepnutí na průhlednost pro VODU
+            _graphicsDevice.BlendState = BlendState.AlphaBlend;
+            _graphicsDevice.DepthStencilState = DepthStencilState.DepthRead;
+
+            float currentChunkX = MathF.Floor(playerPosition.X / Chunk.ChunkWorldSize) * Chunk.ChunkWorldSize + (Chunk.ChunkWorldSize / 2f);
+            float currentChunkZ = MathF.Floor(playerPosition.Z / Chunk.ChunkWorldSize) * Chunk.ChunkWorldSize + (Chunk.ChunkWorldSize / 2f);
+
+            waterEffect.World = Matrix.CreateTranslation(currentChunkX, 0f, currentChunkZ);
+
+            _graphicsDevice.SetVertexBuffer(_waterVertexBuffer);
+            _graphicsDevice.Indices = _waterIndexBuffer;
+
+            foreach (EffectPass pass in waterEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, 2);
+            }
+
+            // RESTARTOVÁNÍ STAVŮ GRAFIKY pro příští snímek
+            _graphicsDevice.DepthStencilState = DepthStencilState.Default;
+            _graphicsDevice.BlendState = BlendState.Opaque;
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world\ChunkWater.cs =====
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace open_world
+{
+    public class ChunkWater
+    {
+        public VertexBuffer VertexBuffer { get; private set; }
+        public IndexBuffer IndexBuffer { get; private set; }
+
+        public ChunkWater(GraphicsDevice device, Point chunkPos, float chunkWorldSize)
+        {
+            float overlap = 1.0f;
+
+            float startX = (chunkPos.X * chunkWorldSize) - overlap;
+            float startZ = (chunkPos.Y * chunkWorldSize) - overlap;
+            float endX = (startX + chunkWorldSize) + (overlap * 2f);
+            float endZ = (startZ + chunkWorldSize) + (overlap * 2f);
+
+            Color waterColor = new Color(30, 130, 210, 160); // Modrá s průhledností
+
+            // Vodní plocha pro 1 chunk na Y = 0f
+            VertexPositionColor[] vertices = new VertexPositionColor[4]
+            {
+                new VertexPositionColor(new Vector3(startX, 0f, startZ), waterColor),
+                new VertexPositionColor(new Vector3(endX, 0f, startZ), waterColor),
+                new VertexPositionColor(new Vector3(startX, 0f, endZ), waterColor),
+                new VertexPositionColor(new Vector3(endX, 0f, endZ), waterColor)
+            };
+
+            short[] indices = new short[6] { 0, 1, 2, 2, 1, 3 };
+
+            VertexBuffer = new VertexBuffer(device, typeof(VertexPositionColor), 4, BufferUsage.WriteOnly);
+            VertexBuffer.SetData(vertices);
+
+            IndexBuffer = new IndexBuffer(device, IndexElementSize.SixteenBits, 6, BufferUsage.WriteOnly);
+            IndexBuffer.SetData(indices);
+        }
+
+        public void Draw(GraphicsDevice device, BasicEffect effect)
+        {
+            device.SetVertexBuffer(VertexBuffer);
+            device.Indices = IndexBuffer;
+
+            foreach (EffectPass pass in effect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                device.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, 2);
+            }
+        }
+
+        public void Unload()
+        {
+            VertexBuffer?.Dispose();
+            IndexBuffer?.Dispose();
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world\DesktopShopUI.cs =====
+using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+
+namespace open_world
+{
+    // Prochází GameEconomy.Upgrades a vygeneruje pro každý jedno tlačítko -
+    // přidáš nový Upgrade do GameEconomy, tady se objeví automaticky, žádná
+    // změna v tomhle souboru není potřeba.
+    public class DesktopShopUI
+    {
+        private List<Button> _buttons = new List<Button>();
+        private SpriteFont _font;
+        private Texture2D _pixelTexture;
+
+        public DesktopShopUI(SpriteFont font, Texture2D pixelTexture)
+        {
+            _font = font;
+            _pixelTexture = pixelTexture;
+
+            int y = 110;
+            foreach (var upgrade in GameEconomy.Upgrades)
+            {
+                var btn = new Button(new Rectangle(40, y, 360, 50), "");
+                var capturedUpgrade = upgrade; // closure - důležité, ať každé tlačítko koupí SVŮJ upgrade
+                btn.OnClick += () => capturedUpgrade.TryBuy();
+                _buttons.Add(btn);
+                y += 60;
+            }
+        }
+
+        public void Update(MouseState mouse)
+        {
+            foreach (var btn in _buttons) btn.Update(mouse);
+        }
+
+        public void Draw(SpriteBatch spriteBatch, Texture2D panelTexture)
+        {
+            spriteBatch.Begin();
+
+            int panelHeight = _buttons.Count * 60 + 70;
+            spriteBatch.Draw(panelTexture, new Rectangle(20, 60, 400, panelHeight), new Color(20, 20, 30, 220));
+            spriteBatch.DrawString(_font, $"OBCHOD   $ {GameEconomy.Money}", new Vector2(40, 75), Color.White);
+            spriteBatch.DrawString(_font, "(B = zpět do hry)", new Vector2(40, 95), Color.Gray);
+
+            for (int i = 0; i < _buttons.Count; i++)
+            {
+                var upgrade = GameEconomy.Upgrades[i];
+
+                _buttons[i].Text = upgrade.CanBuy()
+                    ? $"{upgrade.Name}: {upgrade.ValueText()}  ->  ${upgrade.NextCost()}"
+                    : $"{upgrade.Name}: {upgrade.ValueText()}  (MAX)";
+
+                _buttons[i].Draw(spriteBatch, _font, _pixelTexture);
+            }
+
+            spriteBatch.End();
+        }
+    }
+}
+
+
+===== SOUBOR: P:\open-world\DuckManager.cs =====
+using System;
+using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace open_world
+{
+    public struct DuckInstanceData : IVertexType
+    {
+        public Vector3 Position;
+        public Vector3 Velocity;
+        public Vector2 YawAndTime;
+        public Vector2 FlapParams;
+
+        public static readonly VertexDeclaration VertexDeclaration = new VertexDeclaration(
+            new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 1),
+            new VertexElement(12, VertexElementFormat.Vector3, VertexElementUsage.Position, 2),
+            new VertexElement(24, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
+            new VertexElement(32, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 1)
+        );
+
+        VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
+    }
+
+    public class DuckManager
+    {
+        private GraphicsDevice _graphicsDevice;
+        private ChunkManager _chunkManager; // NOVÉ: zdroj pravdy o tom, co je načtené
+
+        private VertexBuffer _duckVertexBuffer;
+        private IndexBuffer _duckIndexBuffer;
+        private int _duckIndexCount;
+
+        private Effect _instancingEffect;
+        private DynamicVertexBuffer _instanceBuffer;
+        private DuckInstanceData[] _instanceData;
+
+        private const int VertexStrideBytes = 40;
+
+        private struct DuckInstance
+        {
+            public Vector3 Position;
+            public Vector3 Velocity;
+            public Vector3 TargetDirection;
+            public float Timer;
+            public float ChangeInterval;
+            public float LastUpdateTime;
+            public Point ChunkCoord; // ve kterém chunku kachna právě je
+            public bool IsDying; // NOVÉ: padá k zemi po zásahu, ještě není recyklovaná
+        }
+
+        // Umírající kachny se updatují KAŽDÝ frame (ne v rámci group-cyklu) -
+        // je jich vždycky jen pár najednou, takže si to můžeme dovolit.
+        private List<int> _dyingDuckIndices = new List<int>();
+        private const float FallSpeed = -25f; // m/s, konstantní rychlost pádu (žádná akcelerace, drženo lehké)
+
+        private List<DuckInstance> _ducks = new List<DuckInstance>();
+
+        // NOVÉ: index kachen podle chunku - pro rychlou recyklaci a rovnoměrné rozprostření.
+        // Klíč = souřadnice chunku, hodnota = seznam indexů do _ducks/_instanceData.
+        private Dictionary<Point, List<int>> _chunkToDuckIndices = new Dictionary<Point, List<int>>();
+
+        private const int GroupCount = 10;
+        private int _currentGroup = 0;
+
+        private const float MinSpeed = 6.0f;
+        private const float MaxSpeed = 12.0f;
+        private const float FlapAmplitude = 0.5f;
+        private const float DuckScale = 1.5f;
+        private const float DuckBoundingRadius = 8.0f;
+        public int Count => _ducks.Count;
+
+        private readonly Random _sharedRandom = new Random();
+
+        public DuckManager(GraphicsDevice device, Effect instancingEffect, ChunkManager chunkManager)
+        {
+            _graphicsDevice = device;
+            _instancingEffect = instancingEffect;
+            _chunkManager = chunkManager;
+
+            // NOVÉ: napojíme se na odnačítání chunků
+            _chunkManager.ChunkUnloaded += OnChunkUnloaded;
+
+            var (vb, ib, count) = DuckMeshGenerator.CreateDuckMesh(device);
+            _duckVertexBuffer = vb;
+            _duckIndexBuffer = ib;
+            _duckIndexCount = count;
+
+            // DŮLEŽITÉ: _instanceData musí existovat DŘÍV, než SpawnInitialFlock()
+            // zavolá RecycleDuck(), protože ten do něj rovnou zapisuje.
+            const int InitialFlockSize = 100;
+            _instanceData = new DuckInstanceData[InitialFlockSize];
+
+            SpawnInitialFlock(InitialFlockSize);
+
+            _instanceBuffer = new DynamicVertexBuffer(device, DuckInstanceData.VertexDeclaration, _ducks.Count, BufferUsage.WriteOnly);
+            _instanceBuffer.SetData(_instanceData, 0, _ducks.Count, SetDataOptions.Discard);
+
+            _culledInstanceData = new DuckInstanceData[_ducks.Count];
+            _culledDrawBuffer = new DynamicVertexBuffer(device, DuckInstanceData.VertexDeclaration, _ducks.Count, BufferUsage.WriteOnly);
+        }
+
+        // ==========================================================
+        //  CHUNK BOOKKEEPING - srdce celé recyklace
+        // ==========================================================
+
+        // Najde nejméně obydlený NAČTENÝ chunk. Tohle zaručuje rovnoměrné
+        // rozprostření bez ohledu na to, jak "chaoticky" se kachny jinak hýbou -
+        // nový/recyklovaný jedinec vždy míří tam, kde je zrovna nejméně kachen.
+        private Point PickLeastPopulatedLoadedChunk()
+        {
+            Point best = Point.Zero;
+            int bestCount = int.MaxValue;
+            bool found = false;
+
+            foreach (var coord in _chunkManager.LoadedChunkCoords)
+            {
+                int count = _chunkToDuckIndices.TryGetValue(coord, out var list) ? list.Count : 0;
+                if (count < bestCount)
+                {
+                    bestCount = count;
+                    best = coord;
+                    found = true;
+                }
+            }
+
+            // Fallback pro edge-case (např. úplně první frame, než je cokoliv načtené)
+            return found ? best : Point.Zero;
+        }
+
+        private Vector3 RandomPositionInChunk(Point chunkCoord)
+        {
+            float minX = chunkCoord.X * Chunk.ChunkWorldSize;
+            float minZ = chunkCoord.Y * Chunk.ChunkWorldSize;
+
+            float px = minX + (float)_sharedRandom.NextDouble() * Chunk.ChunkWorldSize;
+            float pz = minZ + (float)_sharedRandom.NextDouble() * Chunk.ChunkWorldSize;
+
+            // ZMĚNA: globální maxTerrainHeight, ne lokální GetHeight(px,pz) - viz vysvětlení
+            // u stejné změny v Update(). Bonus: ušetří to i jedno volání noise funkce na kachnu.
+            float minH = Game1.maxTerrainHeight + Game1.PlayerEyeHeight + 2.0f;
+            float maxH = minH + 30.0f;
+            float py = MathHelper.Lerp(minH, maxH, (float)_sharedRandom.NextDouble());
+
+            return new Vector3(px, py, pz);
+        }
+
+        // Odebere kachnu ze starého záznamu v _chunkToDuckIndices (pokud tam byla)
+        private void RemoveFromChunkIndex(int duckIndex, Point chunkCoord)
+        {
+            if (_chunkToDuckIndices.TryGetValue(chunkCoord, out var list))
+            {
+                list.Remove(duckIndex);
+                // Prázdný seznam necháme být (klidně se znovu použije) - není potřeba mazat klíč.
+            }
+        }
+
+        private void AddToChunkIndex(int duckIndex, Point chunkCoord)
+        {
+            if (!_chunkToDuckIndices.TryGetValue(chunkCoord, out var list))
+            {
+                list = new List<int>();
+                _chunkToDuckIndices[chunkCoord] = list;
+            }
+            list.Add(duckIndex);
+        }
+
+        // Teleportuje kachnu na nové místo v nejméně obydleném načteném chunku.
+        // Používá se jak pro první spawn, tak pro recyklaci (mimo mapu / odnačtený chunk / zástřel).
+        private void RecycleDuck(int duckIndex, float totalTime)
+        {
+            DuckInstance duck = _ducks[duckIndex];
+
+            // Odhlásit ze starého chunku (pokud už měla nějaký přiřazený)
+            RemoveFromChunkIndex(duckIndex, duck.ChunkCoord);
+
+            Point newChunk = PickLeastPopulatedLoadedChunk();
+            Vector3 newPos = RandomPositionInChunk(newChunk);
+
+            float angle = (float)(_sharedRandom.NextDouble() * MathHelper.TwoPi);
+            Vector3 initialDir = new Vector3(MathF.Cos(angle), 0, MathF.Sin(angle));
+            float speed = MinSpeed + (float)(_sharedRandom.NextDouble() * (MaxSpeed - MinSpeed));
+
+            duck.Position = newPos;
+            duck.Velocity = initialDir * speed;
+            duck.TargetDirection = initialDir;
+            duck.Timer = 0f;
+            duck.ChangeInterval = 2.0f + (float)(_sharedRandom.NextDouble() * 3.0f);
+            duck.LastUpdateTime = totalTime;
+            duck.ChunkCoord = newChunk;
+
+            _ducks[duckIndex] = duck;
+            AddToChunkIndex(duckIndex, newChunk);
+
+            _instanceData[duckIndex] = BuildInstanceData(duck);
+        }
+
+        // NOVÉ: reakce na to, že ChunkManager právě odnačetl chunk.
+        // Recyklujeme JEN kachny, co v něm byly - ne celý flock.
+        private void OnChunkUnloaded(Point unloadedChunk)
+        {
+            if (!_chunkToDuckIndices.TryGetValue(unloadedChunk, out var affected) || affected.Count == 0)
+                return;
+
+            // Kopie, protože RecycleDuck() bude za běhu měnit _chunkToDuckIndices
+            // (včetně toho seznamu, přes který zrovna iterujeme).
+            var affectedCopy = new List<int>(affected);
+
+            foreach (int duckIndex in affectedCopy)
+            {
+                RecycleDuck(duckIndex, _lastKnownTotalTime);
+            }
+
+            // Případně dopiš aktualizovaná data i do GPU bufferu hned teď (mimo pořadí skupin) -
+            // jinak se to promítne až při příštím "tahu" té skupiny (max o GroupCount snímků později).
+            // Pro pár desítek kachen z jednoho chunku je jedno malé extra SetData v pohodě.
+            UploadDuckRange(affectedCopy);
+        }
+
+        private float _lastKnownTotalTime;
+
+        private void UploadDuckRange(List<int> indices)
+        {
+            // Nejsou nutně souvislé, takže je pošleme jednotlivě - je jich řádově málo
+            // (jeden chunk stojí ve výchozím rozložení tak desítky kachen), takže to neřeší
+            // bandwidth problém, jen okamžitou vizuální konzistenci po recyklaci.
+            foreach (int i in indices)
+            {
+                _instanceBuffer.SetData(
+                    i * VertexStrideBytes,
+                    _instanceData,
+                    i, 1,
+                    VertexStrideBytes,
+                    SetDataOptions.NoOverwrite
+                );
+            }
+        }
+
+        // ==========================================================
+        //  SPAWN / UPDATE / DRAW
+        // ==========================================================
+
+        private void SpawnInitialFlock(int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                // Založíme "prázdnou" kachnu a hned ji necháme RecycleDuck() umístit -
+                // stejná cesta kódu jako běžná recyklace = žádná duplicitní logika.
+                _ducks.Add(new DuckInstance { ChunkCoord = new Point(int.MinValue, int.MinValue) });
+                RecycleDuck(i, 0f);
+            }
+        }
+
+        private DuckInstanceData BuildInstanceData(DuckInstance duck)
+        {
+            Vector3 forward = duck.Velocity;
+            if (forward != Vector3.Zero) forward.Normalize();
+            else forward = Vector3.Forward;
+
+            float yaw = MathF.Atan2(forward.X, forward.Z);
+
+            return new DuckInstanceData
+            {
+                Position = duck.Position,
+                Velocity = duck.Velocity,
+                YawAndTime = new Vector2(yaw, duck.LastUpdateTime),
+                FlapParams = new Vector2(duck.LastUpdateTime, 10.0f) // fáze odvozená z LastUpdateTime, stačí na desynchronizaci
+            };
+        }
+
+        public void Update(float deltaTime, float totalTime)
+        {
+            _lastKnownTotalTime = totalTime;
+
+            int groupSize = _ducks.Count / GroupCount;
+            if (groupSize == 0) groupSize = _ducks.Count;
+
+            int startIdx = _currentGroup * groupSize;
+            int endIdx = (_currentGroup == GroupCount - 1) ? _ducks.Count : Math.Min(startIdx + groupSize, _ducks.Count);
+
+            for (int i = startIdx; i < endIdx; i++)
+            {
+                DuckInstance duck = _ducks[i];
+
+                if (duck.IsDying) continue; // padá - o tu se stará UpdateDyingDucks(), ne skupinová AI
+
+                float elapsed = totalTime - duck.LastUpdateTime;
+                if (elapsed <= 0f) elapsed = 1f / 60f;
+
+                // ZMĚNA: globální maxTerrainHeight místo lokální výšky terénu POD kachnou.
+                // Lokální výška by kachnu nechala klesnout nad údolím, kde by ji šlo
+                // vidět shora z okolního kopce - a duck mesh nemá správně orientované
+                // trojúhelníky pro pohled shora (viz DuckMeshGenerator.AddTriangle).
+                // Takhle je kachna garantovaně nad VŠÍM terénem ve hře, odkudkoliv.
+                float minH = Game1.maxTerrainHeight + Game1.PlayerEyeHeight + 2.0f;
+                float maxH = minH + 30.0f;
+
+                if (duck.Position.Y < minH)
+                    duck.Position.Y = MathHelper.Lerp(duck.Position.Y, minH, elapsed * 2.0f);
+                else if (duck.Position.Y > maxH)
+                    duck.Position.Y = MathHelper.Lerp(duck.Position.Y, maxH, elapsed * 2.0f);
+
+                duck.Timer += elapsed;
+
+                // ZRUŠENO: žádné "steer to center" / WorldBounds panika. Kachna prostě
+                // normálně bloudí - hranice řešíme až tím, jestli je pořád v načteném chunku (níž).
+                if (duck.Timer >= duck.ChangeInterval)
+                {
+                    duck.Timer = 0f;
+
+                    Vector3 currentDir = duck.Velocity;
+                    if (currentDir != Vector3.Zero) currentDir.Normalize();
+
+                    float maxAngleDelta = MathHelper.ToRadians(15.0f);
+                    float angleDelta = (float)(_sharedRandom.NextDouble() * 2.0 - 1.0) * maxAngleDelta;
+
+                    float cos = MathF.Cos(angleDelta);
+                    float sin = MathF.Sin(angleDelta);
+                    Vector3 newDir = new Vector3(
+                        currentDir.X * cos - currentDir.Z * sin,
+                        0,
+                        currentDir.X * sin + currentDir.Z * cos
+                    );
+                    newDir.Normalize();
+
+                    duck.TargetDirection = newDir;
+                }
+
+                Vector3 currentVelocityDir = duck.Velocity;
+                float currentSpeed = currentVelocityDir.Length();
+                if (currentSpeed > 0) currentVelocityDir /= currentSpeed;
+                else currentVelocityDir = Vector3.Forward;
+
+                float lerpT = MathHelper.Clamp(elapsed * 2.0f, 0f, 1f);
+                Vector3 blendedDir = Vector3.Lerp(currentVelocityDir, duck.TargetDirection, lerpT);
+                blendedDir.Normalize();
+
+                float speed = MathHelper.Clamp(currentSpeed, MinSpeed, MaxSpeed);
+                duck.Velocity = blendedDir * speed;
+                duck.Position += duck.Velocity * elapsed;
+                duck.LastUpdateTime = totalTime;
+
+                // --- NOVÉ: kontrola chunku po pohybu ---
+                Point newChunkCoord = new Point(
+                    (int)MathF.Floor(duck.Position.X / Chunk.ChunkWorldSize),
+                    (int)MathF.Floor(duck.Position.Z / Chunk.ChunkWorldSize)
+                );
+
+                bool stillLoaded = IsChunkLoaded(newChunkCoord);
+
+                if (!stillLoaded)
+                {
+                    // Vylétla mimo načtenou oblast -> recyklace (teleport do nejméně
+                    // obydleného načteného chunku), stejná cesta jako u OnChunkUnloaded.
+                    _ducks[i] = duck; // uložit rozpohybovanou kachnu, RecycleDuck() ji přepíše
+                    RemoveFromChunkIndex(i, duck.ChunkCoord); // pozor: stará ChunkCoord, ne nová
+                    RecycleDuck(i, totalTime);
+                    continue;
+                }
+
+                if (newChunkCoord != duck.ChunkCoord)
+                {
+                    RemoveFromChunkIndex(i, duck.ChunkCoord);
+                    duck.ChunkCoord = newChunkCoord;
+                    AddToChunkIndex(i, newChunkCoord);
+                }
+
+                _ducks[i] = duck;
+                _instanceData[i] = BuildInstanceData(duck);
+            }
+
+            _currentGroup = (_currentGroup + 1) % GroupCount;
+
+            int updatedCount = endIdx - startIdx;
+            if (updatedCount > 0)
+            {
+                int offsetBytes = startIdx * VertexStrideBytes;
+                _instanceBuffer.SetData(offsetBytes, _instanceData, startIdx, updatedCount, VertexStrideBytes, SetDataOptions.NoOverwrite);
+            }
+
+            // Umírající kachny řešíme MIMO group-cyklus - každý frame, protože je jich málo.
+            UpdateDyingDucks(totalTime);
+        }
+
+        // Malá pomocná metoda - lineární hledání v LoadedChunkCoords stačí,
+        // protože jich je typicky jen pár desítek (3x3 až 5x5 render distance).
+        private bool IsChunkLoaded(Point coord)
+        {
+            foreach (var loaded in _chunkManager.LoadedChunkCoords)
+            {
+                if (loaded == coord) return true;
+            }
+            return false;
+        }
+
+        // Kuželová detekce zásahu. origin/direction = pozice a směr pohledu hráče.
+        // Vrací počet zasažených (a rovnou recyklovaných) kachen.
+        public int Shoot(Vector3 origin, Vector3 direction, float range, float spreadAngleDegrees, float totalTime)
+        {
+            // cos() spočítáme JEDNOU za celý výstřel, ne pro každou kachnu -
+            // porovnávání dot product s touhle konstantou je pak jen násobení/porovnání.
+            float cosThreshold = MathF.Cos(MathHelper.ToRadians(spreadAngleDegrees));
+            float rangeSq = range * range;
+            int killed = 0;
+
+            for (int i = 0; i < _ducks.Count; i++)
+            {
+                var data = _instanceData[i];
+                float elapsed = totalTime - data.YawAndTime.Y;
+                Vector3 duckPos = data.Position + data.Velocity * elapsed; // stejná extrapolace jako v Draw()
+
+                Vector3 toDuck = duckPos - origin;
+                float distSq = toDuck.LengthSquared();
+
+                if (distSq > rangeSq || distSq < 0.0001f) continue; // mimo dosah / kachna přímo v očích
+
+                Vector3 dirToDuck = toDuck / MathF.Sqrt(distSq);
+                float dot = Vector3.Dot(dirToDuck, direction);
+
+                if (dot >= cosThreshold)
+                {
+                    KillDuck(i, totalTime);
+                    killed++;
+                }
+            }
+
+            return killed;
+        }
+
+        // Nastaví kachnu do "umírá" stavu - padá dolů konstantní rychlostí,
+        // teprve po dopadu na zem se skutečně recykluje (teleportuje pryč).
+        private void KillDuck(int duckIndex, float totalTime)
+        {
+            DuckInstance duck = _ducks[duckIndex];
+
+            if (duck.IsDying) return; // už padá, nezasahovat znovu
+
+            duck.IsDying = true;
+            duck.Velocity = new Vector3(0f, FallSpeed, 0f);
+            duck.LastUpdateTime = totalTime;
+
+            _ducks[duckIndex] = duck;
+            _dyingDuckIndices.Add(duckIndex);
+            _instanceData[duckIndex] = BuildInstanceData(duck);
+
+            // Okamžitý upload, ať pád začne vidět hned, ne až za dalších pár framů.
+            _instanceBuffer.SetData(duckIndex * VertexStrideBytes, _instanceData, duckIndex, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
+        }
+
+        // Zpracuje VŠECHNY umírající kachny (je jich vždy jen pár) - volá se
+        // každý frame z Update(), mimo group-cyklus. Když dopadnou na zem,
+        // teprve tady se skutečně recyklují (RecycleDuck).
+        private void UpdateDyingDucks(float totalTime)
+        {
+            if (_dyingDuckIndices.Count == 0) return;
+
+            for (int idx = _dyingDuckIndices.Count - 1; idx >= 0; idx--)
+            {
+                int i = _dyingDuckIndices[idx];
+                DuckInstance duck = _ducks[i];
+
+                float elapsed = totalTime - duck.LastUpdateTime;
+                if (elapsed <= 0f) continue;
+
+                duck.Position += duck.Velocity * elapsed;
+                duck.LastUpdateTime = totalTime;
+
+                float groundH = TerrainGenerator.GetHeight(duck.Position.X, duck.Position.Z);
+
+                if (duck.Position.Y <= groundH)
+                {
+                    // Dopadla - skutečná recyklace (teleport pryč, reset stavu)
+                    duck.IsDying = false; // RecycleDuck přepíše zbytek, ale tohle pro jistotu
+                    _ducks[i] = duck;
+                    _dyingDuckIndices.RemoveAt(idx);
+                    RecycleDuck(i, totalTime);
+                }
+                else
+                {
+                    _ducks[i] = duck;
+                    _instanceData[i] = BuildInstanceData(duck);
+                    _instanceBuffer.SetData(i * VertexStrideBytes, _instanceData, i, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
+                }
+            }
+        }
+
+        public void Draw(Matrix view, Matrix projection, Vector3 ambientColor, Vector3 diffuseColor, Vector3 lightDirection, float totalTime)
+        {
+            if (_ducks.Count == 0) return;
+
+            BoundingFrustum frustum = new BoundingFrustum(view * projection);
+
+            int visibleCount = 0;
+            var culled = _culledInstanceData;
+
+            for (int i = 0; i < _ducks.Count; i++)
+            {
+                var data = _instanceData[i];
+                float elapsed = totalTime - data.YawAndTime.Y;
+                Vector3 extrapolatedPos = data.Position + data.Velocity * elapsed;
+
+                if (frustum.Intersects(new BoundingSphere(extrapolatedPos, DuckBoundingRadius)))
+                {
+                    culled[visibleCount] = data;
+                    visibleCount++;
+                }
+            }
+
+            if (visibleCount == 0) return;
+
+            _culledDrawBuffer.SetData(culled, 0, visibleCount, SetDataOptions.Discard);
+
+            _graphicsDevice.SetVertexBuffers(
+                new VertexBufferBinding(_duckVertexBuffer, 0, 0),
+                new VertexBufferBinding(_culledDrawBuffer, 0, 1)
+            );
+            _graphicsDevice.Indices = _duckIndexBuffer;
+
+            _instancingEffect.Parameters["View"].SetValue(view);
+            _instancingEffect.Parameters["Projection"].SetValue(projection);
+            _instancingEffect.Parameters["AmbientColor"].SetValue(ambientColor);
+            _instancingEffect.Parameters["DiffuseColor"].SetValue(diffuseColor);
+            _instancingEffect.Parameters["LightDirection"].SetValue(lightDirection);
+            _instancingEffect.Parameters["Time"].SetValue(totalTime);
+            _instancingEffect.Parameters["FlapAmplitude"].SetValue(FlapAmplitude);
+            _instancingEffect.Parameters["DuckScale"].SetValue(DuckScale);
+
+            foreach (EffectPass pass in _instancingEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+
+                _graphicsDevice.DrawInstancedPrimitives(
+                    PrimitiveType.TriangleList,
+                    baseVertex: 0,
+                    startIndex: 0,
+                    primitiveCount: _duckIndexCount / 3,
+                    instanceCount: visibleCount
+                );
+            }
+        }
+
+        private DuckInstanceData[] _culledInstanceData;
+        private DynamicVertexBuffer _culledDrawBuffer;
+
+        public void Unload()
+        {
+            _chunkManager.ChunkUnloaded -= OnChunkUnloaded;
+            _duckVertexBuffer?.Dispose();
+            _duckIndexBuffer?.Dispose();
+            _instanceBuffer?.Dispose();
+            _culledDrawBuffer?.Dispose();
+        }
+        public void GrowFlockTo(int newCount, float totalTime)
+        {
+            int oldCount = _ducks.Count;
+            if (newCount <= oldCount) return; // zmenšování neřešíme, jen růst
+
+            // Rozšíření CPU-side polí. Array.Resize zachová stará data, nová
+            // místa naplníme až v cyklu níž přes RecycleDuck (stejná cesta jako spawn).
+            Array.Resize(ref _instanceData, newCount);
+            Array.Resize(ref _culledInstanceData, newCount);
+
+            for (int i = oldCount; i < newCount; i++)
+            {
+                _ducks.Add(new DuckInstance { ChunkCoord = new Point(int.MinValue, int.MinValue) });
+                RecycleDuck(i, totalTime);
+            }
+
+            // GPU buffery musí mít pevnou kapacitu danou při vytvoření - není jak
+            // je "dorostit", takže staré zahodíme a vytvoříme nové, větší.
+            _instanceBuffer?.Dispose();
+            _instanceBuffer = new DynamicVertexBuffer(_graphicsDevice, DuckInstanceData.VertexDeclaration, newCount, BufferUsage.WriteOnly);
+            _instanceBuffer.SetData(_instanceData, 0, newCount, SetDataOptions.Discard);
+
+            _culledDrawBuffer?.Dispose();
+            _culledDrawBuffer = new DynamicVertexBuffer(_graphicsDevice, DuckInstanceData.VertexDeclaration, newCount, BufferUsage.WriteOnly);
+        }
+
+    }
+}
+
+===== SOUBOR: P:\open-world\DuckMeshGenerator.cs =====
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using System.Collections.Generic;
+
+namespace open_world
+{
+    public static class DuckMeshGenerator
+    {
+        public static (VertexBuffer vertexBuffer, IndexBuffer indexBuffer, int indexCount) CreateDuckMesh(GraphicsDevice device)
+        {
+            List<TerrainVertex> vertices = new List<TerrainVertex>();
+            List<int> indices = new List<int>();
+
+            // Poloviční tloušťka těla (nahořo a dole od středu Y = 0)
+            float halfThickness = 0.10f;
+
+            // Barvy
+            Color colWingInner = new Color(0x70, 0x63, 0x57);
+            Color colWingOuter = new Color(0x52, 0x46, 0x3E);
+            Color colChest = new Color(0x4D, 0x32, 0x26);
+            Color colTorso = new Color(0x42, 0x3B, 0x34);
+            Color colDarkBack = new Color(0x21, 0x1E, 0x1A);
+            Color colHead = new Color(0x00, 0x5E, 0x38);
+            Color colTailBlack = Color.Black;
+            Color colTailWhite = new Color(0xF0, 0xF0, 0xF0);
+            Color colBeak = new Color(240, 190, 20);
+
+            // Pomocná metoda pro plný 3D objem vč. bočních stěn mezi hranami
+            void AddSolidPart(Vector3 p1, Vector3 p2, Vector3 p3, Color color)
+            {
+                // Horní body
+                Vector3 p1Top = new Vector3(p1.X, p1.Y + halfThickness, p1.Z);
+                Vector3 p2Top = new Vector3(p2.X, p2.Y + halfThickness, p2.Z);
+                Vector3 p3Top = new Vector3(p3.X, p3.Y + halfThickness, p3.Z);
+
+                // Spodní body
+                Vector3 p1Bot = new Vector3(p1.X, p1.Y - halfThickness, p1.Z);
+                Vector3 p2Bot = new Vector3(p2.X, p2.Y - halfThickness, p2.Z);
+                Vector3 p3Bot = new Vector3(p3.X, p3.Y - halfThickness, p3.Z);
+
+                // 1. Horní trojúhelník (obrácené pořadí - opraveno, bylo to naopak)
+                AddTriangle(vertices, indices, p1Top, p3Top, p2Top, color);
+
+                // 2. Spodní trojúhelník (normální pořadí - opraveno, bylo to naopak)
+                AddTriangle(vertices, indices, p1Bot, p2Bot, p3Bot, color);
+
+                // 3. Boční stěny (propojení hran p1->p2, p2->p3, p3->p1)
+                AddQuadWall(vertices, indices, p1Top, p1Bot, p2Top, p2Bot, color);
+                AddQuadWall(vertices, indices, p2Top, p2Bot, p3Top, p3Bot, color);
+                AddQuadWall(vertices, indices, p3Top, p3Bot, p1Top, p1Bot, color);
+            }
+
+            // --- 1. LEVÉ KŘÍDLO (opravené pořadí pro správnou normálu) ---
+            Vector3 wL_Attach = new Vector3(-0.35f, 0.0f, 0.6f);
+            Vector3 wL_Joint = new Vector3(-1.80f, 0.0f, 0.5f);
+            Vector3 wL_Tip = new Vector3(-4.40f, 0.0f, 0.65f);
+            Vector3 wL_Bottom = new Vector3(0.0f, 0.0f, -0.35f);
+
+            AddSolidPart(wL_Attach, wL_Bottom, wL_Joint, colWingInner);
+            AddSolidPart(wL_Joint, wL_Bottom, wL_Tip, colWingOuter);
+
+            // --- 2. PRAVÉ KŘÍDLO ---
+            Vector3 wR_Attach = new Vector3(0.35f, 0.0f, 0.6f);
+            Vector3 wR_Joint = new Vector3(1.80f, 0.0f, 0.5f);
+            Vector3 wR_Tip = new Vector3(4.40f, 0.0f, 0.65f);
+            Vector3 wR_Bottom = new Vector3(0.0f, 0.0f, -0.35f);
+
+            AddSolidPart(wR_Attach, wR_Joint, wR_Bottom, colWingInner);
+            AddSolidPart(wR_Joint, wR_Tip, wR_Bottom, colWingOuter);
+
+            // --- 3. TRUP A HRUĎ ---
+            Vector3 tChest = new Vector3(0.0f, 0.0f, 1.1f);
+            Vector3 tMidL = new Vector3(-0.35f, 0.0f, 0.6f);
+            Vector3 tMidR = new Vector3(0.35f, 0.0f, 0.6f);
+            Vector3 tMidBot = new Vector3(0.0f, -0.1f, -0.35f);
+            Vector3 tRearL = new Vector3(-0.35f, 0.0f, -0.8f);
+            Vector3 tRearR = new Vector3(0.35f, 0.0f, -0.8f);
+
+            AddSolidPart(tChest, tMidR, tMidL, colChest);
+            AddSolidPart(tMidL, tMidR, tMidBot, colTorso);
+            AddSolidPart(tRearL, tMidBot, tRearR, colDarkBack);
+
+            // --- 4. HLAVA A ZOBÁK ---
+            Vector3 hTip = new Vector3(0.0f, 0.05f, 1.3f);
+            Vector3 hBaseL = new Vector3(-0.12f, 0.0f, 0.9f);
+            Vector3 hBaseR = new Vector3(0.12f, 0.0f, 0.9f);
+
+            AddSolidPart(hTip, hBaseR, hBaseL, colHead);
+
+            Vector3 bTip = new Vector3(0.0f, 0.08f, 1.55f);
+            AddSolidPart(bTip, hTip + new Vector3(0.04f, 0.02f, -0.1f), hTip + new Vector3(-0.04f, 0.02f, -0.1f), colBeak);
+
+            // --- 5. OCAS ---
+            Vector3 tailTip = new Vector3(0.0f, 0.0f, -1.4f);
+            Vector3 tailL = new Vector3(-0.6f, 0.0f, -1.1f);
+            Vector3 tailR = new Vector3(0.6f, 0.0f, -1.1f);
+
+            AddSolidPart(tailTip, tRearL, tRearR, colTailBlack);
+            AddSolidPart(tailTip, tailL, tRearL, colTailWhite);
+            AddSolidPart(tailTip, tRearR, tailR, colTailWhite);
+
+            // Nahrání do GPU
+            VertexBuffer vb = new VertexBuffer(device, TerrainVertex.VertexDeclaration, vertices.Count, BufferUsage.WriteOnly);
+            vb.SetData(vertices.ToArray());
+
+            IndexBuffer ib = new IndexBuffer(device, IndexElementSize.ThirtyTwoBits, indices.Count, BufferUsage.WriteOnly);
+            ib.SetData(indices.ToArray());
+
+            return (vb, ib, indices.Count);
+        }
+
+        // Pomocná metoda pro vytvoření boční stěny ze 4 bodů (obdélník rozdělený na 2 trojúhelníky)
+        private static void AddQuadWall(List<TerrainVertex> vertices, List<int> indices, Vector3 aTop, Vector3 aBot, Vector3 bTop, Vector3 bBot, Color color)
+        {
+            // Pokud jsou body totožné, stěna nevzniká
+            if (aTop == bTop || aBot == bBot) return;
+
+            AddTriangle(vertices, indices, aTop, bTop, aBot, color);
+            AddTriangle(vertices, indices, bTop, bBot, aBot, color);
+        }
+
+        private static void AddTriangle(List<TerrainVertex> vertices, List<int> indices, Vector3 p1, Vector3 p2, Vector3 p3, Color color)
+        {
+            Vector3 side1 = p2 - p1;
+            Vector3 side2 = p3 - p1;
+            Vector3 normal = Vector3.Normalize(Vector3.Cross(side1, side2));
+
+            // Pojistka proti NaN, kdyby trojúhelník byl degenerovaný (nulová plocha)
+            if (float.IsNaN(normal.X) || float.IsNaN(normal.Y) || float.IsNaN(normal.Z))
+                return;
+
+            // ODSTRANĚNO: "if (normal.Y < 0) flip" - tahle kontrola dávala smysl pro terén
+            // (jedna souvislá plocha, vždy pohled shora), ale u uzavřeného 3D modelu kachny
+            // ničila záměrně obrácený winding spodních víček z AddSolidPart (viz komentář
+            // "obrácené pořadí pro správnou normálu" tam). Winding teď zůstává tak, jak ho
+            // nastavuje volající kód - to je jediné správné místo, kde se o tom má rozhodovat.
+
+            int baseIdx = vertices.Count;
+
+            vertices.Add(new TerrainVertex { Position = p1, Normal = normal, Color = color });
+            vertices.Add(new TerrainVertex { Position = p2, Normal = normal, Color = color });
+            vertices.Add(new TerrainVertex { Position = p3, Normal = normal, Color = color });
+
+            indices.Add(baseIdx);
+            indices.Add(baseIdx + 1);
+            indices.Add(baseIdx + 2);
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world\Game1.cs =====
+﻿using System;
+using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using static FastNoiseLite;
+
+namespace open_world
+{
+    public struct TerrainVertex : IVertexType
+    {
+        public Vector3 Position;
+        public Vector3 Normal;
+        public Color Color;
+
+        public static readonly VertexDeclaration VertexDeclaration = new VertexDeclaration(
+            new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
+            new VertexElement(12, VertexElementFormat.Vector3, VertexElementUsage.Normal, 0),
+            new VertexElement(24, VertexElementFormat.Color, VertexElementUsage.Color, 0)
+        );
+
+        VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
+    }
+
+    public class Game1 : Game
+    {
+        private GraphicsDeviceManager _graphics;
+
+        private BasicEffect _terrainEffect;
+
+        // Kamera a ovládání
+        private Vector3 _cameraPosition = new Vector3(0, 30, 80);
+        private float _yaw = -MathHelper.PiOver2; // Nastaveno na -90° (pohled dopředu směrem k -Z)
+        private float _pitch = 0f;
+        private float _lookSensitivity = 0.003f;
+        private bool _isMouseCentered = true;
+        private ChunkManager _chunkManager;
+        private BasicEffect _waterEffect;
+
+        // Fyzika hráče (1 jednotka = 1 metr)
+        private float _verticalVelocity = 0f;
+        private bool _isGrounded = false;
+        private const float Gravity = 20.0f;        // Gravitace (m/s^2)
+        private const float JumpVelocity = 7.5f;    // Rychlost odrazu při skoku
+        private const float WalkSpeed = 6.0f;       // Rychlost chůze (m/s)
+        private const float RunSpeed = 12.0f;       // Rychlost běhu (m/s)
+        public const float PlayerEyeHeight = 1.8f; // Výška očí nad terénem
+
+        private Vector3 _cameraFront = Vector3.Forward; // Směr, kam se kamera dívá
+        private Vector3 _cameraUp = Vector3.Up;          // Směr "nahoru"
+
+        public enum GameState
+        {
+            Menu,
+            Playing,
+            Shop
+        }
+
+        private GameState _currentState = GameState.Menu;
+        private SpriteBatch _spriteBatch;
+        private SpriteFont _font;
+        private Texture2D _pixelTexture;
+        private Button _playButton;
+        private Button _exitButton;
+        private Texture2D _buttonPixelTexture;
+        private Texture2D _roundedPanelTexture;
+        private Rectangle _panelBounds;
+        private bool _wasMaximizedBeforeFullscreen = false;
+        private VertexBuffer _duckVertexBuffer;
+        private IndexBuffer _duckIndexBuffer;
+        private int _duckIndexCount;
+        private Vector3 _testDuckPosition = new Vector3(0, 15, 20); // Ve vzduchu před hráčem
+        private DuckManager _duckManager;
+        private float _fpsTimer = 0f;
+        private int _fpsCounter = 0;
+        private int _currentFps = 0;
+        private bool vsync = false;
+        public const float minTerrainHeight = -8f;
+        public const float maxTerrainHeight = 40f;
+#if !ANDROID
+        private DesktopShopUI _shopUI;
+#endif
+        public Game1()
+        {
+            _graphics = new GraphicsDeviceManager(this);
+            _graphics.GraphicsProfile = GraphicsProfile.HiDef;
+            Content.RootDirectory = "Content";
+            IsMouseVisible = true;
+
+            _graphics.PreferredBackBufferWidth = 1280;
+            _graphics.PreferredBackBufferHeight = 720;
+
+            Window.AllowUserResizing = true;
+            Window.ClientSizeChanged += OnWindowResize;
+        }
+
+        protected override void Initialize()
+        {
+            Mouse.SetPosition(GraphicsDevice.Viewport.Width / 2, GraphicsDevice.Viewport.Height / 2);
+            base.Initialize();
+            if (vsync == false)
+            {
+                _graphics.SynchronizeWithVerticalRetrace = false; // Vypne VSync
+                IsFixedTimeStep = false; // Vypne fixní časový krok (odemkne framerate)
+            }
+        }
+
+        protected override void LoadContent()
+        {
+            _spriteBatch = new SpriteBatch(GraphicsDevice);
+            _font = Content.Load<SpriteFont>("Arial");
+
+            _terrainEffect = new BasicEffect(GraphicsDevice);
+            _terrainEffect.VertexColorEnabled = true;
+            _terrainEffect.EnableDefaultLighting();
+
+            _terrainEffect.SpecularColor = Vector3.Zero;
+            _terrainEffect.AmbientLightColor = new Color(70, 80, 90).ToVector3();
+            _terrainEffect.DirectionalLight0.Direction = Vector3.Normalize(new Vector3(-0.5f, -1.0f, -0.3f));
+            _terrainEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f, 0.85f, 0.75f);
+
+            _waterEffect = new BasicEffect(GraphicsDevice);
+            _waterEffect.VertexColorEnabled = true;
+            _waterEffect.LightingEnabled = false;
+
+            _chunkManager = new ChunkManager(GraphicsDevice, seed: 5);
+            _chunkManager.Update(_cameraPosition, isFirstLoad: true);
+            _pixelTexture = new Texture2D(GraphicsDevice, 1, 1);
+            _pixelTexture.SetData(new Color[] { Color.White });
+
+            int panelWidth = 400;
+            int panelHeight = 300;
+            int cornerRadius = 20;
+
+            _roundedPanelTexture = CreateRoundedRectangleTexture(GraphicsDevice, panelWidth, panelHeight, cornerRadius, Color.White);
+
+            int centerX = (GraphicsDevice.Viewport.Width - panelWidth) / 2;
+            int centerY = (GraphicsDevice.Viewport.Height - panelHeight) / 2;
+            _panelBounds = new Rectangle(centerX, centerY, panelWidth, panelHeight);
+
+            int buttonWidth = 220;
+            int buttonHeight = 45;
+            int buttonX = centerX + (panelWidth - buttonWidth) / 2;
+
+            _buttonPixelTexture = new Texture2D(GraphicsDevice, 1, 1);
+            _buttonPixelTexture.SetData(new Color[] { Color.White });
+
+            _playButton = new Button(new Rectangle(buttonX, centerY + 100, buttonWidth, buttonHeight), "Spustit hru");
+            _playButton.OnClick += () =>
+            {
+                _currentState = GameState.Playing;
+                IsMouseVisible = false;
+                Mouse.SetPosition(GraphicsDevice.Viewport.Width / 2, GraphicsDevice.Viewport.Height / 2);
+            };
+
+            _exitButton = new Button(new Rectangle(buttonX, centerY + 160, buttonWidth, buttonHeight), "Ukončit");
+            _exitButton.OnClick += () =>
+            {
+                Exit();
+            };
+            // Vygenerování 13-tris kachny
+            var (duckVB, duckIB, duckCount) = DuckMeshGenerator.CreateDuckMesh(GraphicsDevice);
+            _duckVertexBuffer = duckVB;
+            _duckIndexBuffer = duckIB;
+            _duckIndexCount = duckCount;
+
+            var duckInstancingEffect = Content.Load<Effect>("DuckInstancing");
+            _duckManager = new DuckManager(GraphicsDevice, duckInstancingEffect, _chunkManager);
+            if (Input.IsTouchPlatform)
+            {
+                _currentState = GameState.Playing;
+                IsMouseVisible = false;
+            }
+#if !ANDROID       
+            _shopUI = new DesktopShopUI(_font, _pixelTexture);
+#endif
+        }
+
+        protected override void Update(GameTime gameTime)
+        {
+            float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
+            _fpsTimer += (float)gameTime.ElapsedGameTime.TotalSeconds;
+            _fpsCounter++;
+
+            if (_fpsTimer >= 1.0f) // Každou 1 sekundu vyhodnotíme FPS
+            {
+                _currentFps = _fpsCounter;
+                _fpsCounter = 0;
+                _fpsTimer = 0f;
+#if ANDROID
+                // Aktualizace Android View (musí běžet na UI vlákně)
+                open_world_android.Activity1.FpsTextView?.Post(() => 
+                {
+                    open_world_android.Activity1.FpsTextView.Text = $"FPS: {_currentFps}";
+                });
+#endif
+            }
+
+            // 1. Aktualizujeme celý Input Manager
+            Input.Update(Window);
+
+            // Globální zkratka pro Fullscreen
+            if (Input.IsToggleFullscreenPressed())
+            {
+                ToggleBorderlessFullscreen();
+            }
+
+            if (_currentState == GameState.Menu)
+            {
+                IsMouseVisible = true;
+                _playButton.Update(Input.CurrentMouseState);
+                _exitButton.Update(Input.CurrentMouseState);
+
+                if (Input.IsMenuConfirmPressed())
+                {
+                    _currentState = GameState.Playing;
+                    IsMouseVisible = false;
+                    Input.CenterMouse(Window);
+                }
+            }
+            else if (_currentState == GameState.Playing)
+            {
+                if (Input.IsPausePressed() && !Input.IsTouchPlatform)
+                {
+                    _currentState = GameState.Menu;
+                    IsMouseVisible = true;
+                }
+
+                // 1. ROTACE MYŠÍ A KAMERA
+                if (_isMouseCentered)
+                {
+                    _yaw += Input.MouseDelta.X * _lookSensitivity;
+                    _pitch -= Input.MouseDelta.Y * _lookSensitivity;
+                    _pitch = Math.Clamp(_pitch, -MathHelper.PiOver2 + 0.01f, MathHelper.PiOver2 - 0.01f);
+
+                    Input.CenterMouse(Window);
+                }
+
+                Vector3 front;
+                front.X = MathF.Cos(_yaw) * MathF.Cos(_pitch);
+                front.Y = MathF.Sin(_pitch);
+                front.Z = MathF.Sin(_yaw) * MathF.Cos(_pitch);
+                _cameraFront = Vector3.Normalize(front);
+
+                // 2. POHYB PODLE KAMERY
+                float currentSpeed = Input.IsRunning() ? RunSpeed : WalkSpeed;
+                Vector2 inputMove = Input.GetMovementVector();
+
+                Vector3 forward = new Vector3(_cameraFront.X, 0, _cameraFront.Z);
+                if (forward != Vector3.Zero) forward.Normalize();
+
+                Vector3 right = Vector3.Cross(forward, _cameraUp);
+                if (right != Vector3.Zero) right.Normalize();
+
+                Vector3 moveDirection = (forward * inputMove.Y) + (right * inputMove.X);
+
+                if (moveDirection != Vector3.Zero)
+                {
+                    moveDirection.Normalize();
+                    _cameraPosition += moveDirection * currentSpeed * deltaTime;
+                }
+
+                // 3. FYZIKA, GRAVITACE A SKOK (s tolerancí z kopce)
+                float currentTerrainHeight = TerrainGenerator.GetHeight(_cameraPosition.X, _cameraPosition.Z);
+                float targetEyeY = currentTerrainHeight + PlayerEyeHeight;
+                float groundTolerance = 0.4f;
+
+                if (_cameraPosition.Y <= targetEyeY + groundTolerance && _verticalVelocity <= 0f)
+                {
+                    _cameraPosition.Y = targetEyeY;
+                    _verticalVelocity = 0f;
+                    _isGrounded = true;
+                }
+                else
+                {
+                    _isGrounded = false;
+                }
+
+                if (Input.IsJumpPressed() && _isGrounded)
+                {
+                    _verticalVelocity = JumpVelocity;
+                    _isGrounded = false;
+                }
+
+                if (!_isGrounded)
+                {
+                    _verticalVelocity -= Gravity * deltaTime;
+                    _cameraPosition.Y += _verticalVelocity * deltaTime;
+
+                    if (_cameraPosition.Y < targetEyeY)
+                    {
+                        _cameraPosition.Y = targetEyeY;
+                        _verticalVelocity = 0f;
+                        _isGrounded = true;
+                    }
+                }
+                if (Input.IsShootPressed())
+                {
+                    int killed = _duckManager.Shoot(
+                        _cameraPosition,
+                        _cameraFront,
+                        GameEconomy.CurrentRange,
+                        GameEconomy.CurrentSpread,
+                        (float)gameTime.TotalGameTime.TotalSeconds
+                    );
+
+                    GameEconomy.Money += killed * GameEconomy.DuckValue;
+                }
+                if (!Input.IsTouchPlatform && Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B))
+                {
+                    _currentState = GameState.Shop;
+                    IsMouseVisible = true;
+                }
+
+
+                _chunkManager.Update(_cameraPosition);
+                if (_duckManager.Count < GameEconomy.CurrentMaxDucks)
+                {
+                    _duckManager.GrowFlockTo(GameEconomy.CurrentMaxDucks, (float)gameTime.TotalGameTime.TotalSeconds);
+                }
+
+                _duckManager.Update((float)gameTime.ElapsedGameTime.TotalSeconds, (float)gameTime.TotalGameTime.TotalSeconds);
+            }
+            else if (_currentState == GameState.Shop)
+            {
+                _shopUI.Update(Input.CurrentMouseState);
+
+                if (Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B) ||
+                    Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.Escape))
+                {
+                    _currentState = GameState.Playing;
+                    IsMouseVisible = false;
+                    Input.CenterMouse(Window);
+                }
+            }
+
+
+            base.Update(gameTime);
+        }
+
+        protected override void Draw(GameTime gameTime)
+        {
+            GraphicsDevice.Clear(Color.CornflowerBlue);
+
+
+            // Použijeme rovnou spočítaný _cameraFront z Update()
+            Matrix view = Matrix.CreateLookAt(_cameraPosition, _cameraPosition + _cameraFront, _cameraUp);
+            Matrix projection = Matrix.CreatePerspectiveFieldOfView(
+                MathHelper.ToRadians(90f),
+                GraphicsDevice.Viewport.AspectRatio,
+                0.1f,
+                3000f
+            );
+
+            // 1. TERÉN
+            GraphicsDevice.DepthStencilState = DepthStencilState.Default;
+
+            _terrainEffect.World = Matrix.Identity;
+            _terrainEffect.View = view;
+            _terrainEffect.Projection = projection;
+
+            _waterEffect.World = Matrix.Identity;
+            _waterEffect.View = view;
+            _waterEffect.Projection = projection;
+
+            _chunkManager.Draw(_terrainEffect, _waterEffect, _cameraPosition);
+
+            // --- VYKRESLENÍ TESTOVACÍ KACHNY ---
+            GraphicsDevice.BlendState = BlendState.Opaque;
+            GraphicsDevice.DepthStencilState = DepthStencilState.Default;
+
+            // Umístění kachny v prostoru (otáčení/posun)
+            _terrainEffect.World = Matrix.CreateScale(2.0f) * Matrix.CreateTranslation(_testDuckPosition);
+
+            GraphicsDevice.SetVertexBuffer(_duckVertexBuffer);
+            GraphicsDevice.Indices = _duckIndexBuffer;
+
+            foreach (EffectPass pass in _terrainEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _duckIndexCount / 3);
+            }
+            _duckManager.Draw(
+                view,
+                projection,
+                new Color(70, 80, 90).ToVector3(),                              // ambient
+                new Vector3(0.9f, 0.85f, 0.75f),                                // diffuse
+                Vector3.Normalize(new Vector3(-0.5f, -1.0f, -0.3f)),             // směr světla
+                (float)gameTime.TotalGameTime.TotalSeconds
+            );
+
+            // Vracíme World matici zpět pro ostatní objekty
+            _terrainEffect.World = Matrix.Identity;
+
+            // 2. MENU
+            if (_currentState == GameState.Menu)
+            {
+                _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp);
+
+                Rectangle fullScreenRect = new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+                _spriteBatch.Draw(_pixelTexture, fullScreenRect, new Color(0, 0, 0, 150));
+
+                _spriteBatch.Draw(_roundedPanelTexture, _panelBounds, new Color(20, 20, 30, 200));
+
+                if (_font != null)
+                {
+                    string title = "PAUZA";
+                    Vector2 textSize = _font.MeasureString(title);
+                    Vector2 textPos = new Vector2(
+                        (int)_panelBounds.X + (_panelBounds.Width - textSize.X) / 2,
+                        (int)_panelBounds.Y + 30
+                    );
+                    _spriteBatch.DrawString(_font, title, textPos, Color.White);
+                    _playButton.Draw(_spriteBatch, _font, _pixelTexture);
+                    _exitButton.Draw(_spriteBatch, _font, _pixelTexture);
+                }
+
+                _spriteBatch.End();
+                GraphicsDevice.DepthStencilState = DepthStencilState.Default;
+            }
+            _spriteBatch.Begin();
+            // Vykreslí text v levém horním rohu (souřadnice 10, 10), barva bílá
+#if !ANDROID            
+            _spriteBatch.DrawString(_font, $"FPS: {_currentFps}", new Vector2(10, 10), Color.White);
+#endif
+            if (_currentState == GameState.Playing)
+            {
+                // Crosshair - jednoduchý křížek uprostřed obrazovky
+                int cx = GraphicsDevice.Viewport.Width / 2;
+                int cy = GraphicsDevice.Viewport.Height / 2;
+                const int size = 10;
+                const int thickness = 2;
+
+                _spriteBatch.Draw(_pixelTexture, new Rectangle(cx - size, cy - thickness / 2, size * 2, thickness), Color.White);
+                _spriteBatch.Draw(_pixelTexture, new Rectangle(cx - thickness / 2, cy - size, thickness, size * 2), Color.White);
+            }
+
+            _spriteBatch.End();
+            if (_currentState == GameState.Shop)
+            {
+                _shopUI.Draw(_spriteBatch, _roundedPanelTexture);
+            }
+
+            base.Draw(gameTime);
+        }
+
+        private Texture2D CreateRoundedRectangleTexture(GraphicsDevice device, int width, int height, int cornerRadius, Color color)
+        {
+            Texture2D texture = new Texture2D(device, width, height);
+            Color[] data = new Color[width * height];
+
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    int index = y * width + x;
+
+                    bool isTopLeft = x < cornerRadius && y < cornerRadius;
+                    bool isTopRight = x >= width - cornerRadius && y < cornerRadius;
+                    bool isBottomLeft = x < cornerRadius && y >= height - cornerRadius;
+                    bool isBottomRight = x >= width - cornerRadius && y >= height - cornerRadius;
+
+                    if (isTopLeft || isTopRight || isBottomLeft || isBottomRight)
+                    {
+                        int cx = isTopLeft || isBottomLeft ? cornerRadius : width - cornerRadius - 1;
+                        int cy = isTopLeft || isTopRight ? cornerRadius : height - cornerRadius - 1;
+
+                        int dx = x - cx;
+                        int dy = y - cy;
+
+                        if (dx * dx + dy * dy <= cornerRadius * cornerRadius)
+                            data[index] = color;
+                        else
+                            data[index] = Color.Transparent;
+                    }
+                    else
+                    {
+                        data[index] = color;
+                    }
+                }
+            }
+
+            texture.SetData(data);
+            return texture;
+        }
+
+        private void OnWindowResize(object sender, EventArgs e)
+        {
+            if (Window.ClientBounds.Width == 0 || Window.ClientBounds.Height == 0)
+                return;
+
+            GraphicsDevice.Viewport = new Viewport(
+                0,
+                0,
+                Window.ClientBounds.Width,
+                Window.ClientBounds.Height
+            );
+
+            RecalculateUILayout();
+        }
+
+        private void RecalculateUILayout()
+        {
+            if (_roundedPanelTexture == null) return;
+
+            int panelWidth = 400;
+            int panelHeight = 300;
+
+            int panelX = (GraphicsDevice.Viewport.Width - panelWidth) / 2;
+            int panelY = (GraphicsDevice.Viewport.Height - panelHeight) / 2;
+            _panelBounds = new Rectangle(panelX, panelY, panelWidth, panelHeight);
+
+            int buttonWidth = 220;
+            int buttonHeight = 45;
+            int buttonX = panelX + (panelWidth - buttonWidth) / 2;
+
+            if (_playButton != null)
+                _playButton.Bounds = new Rectangle(buttonX, panelY + 100, buttonWidth, buttonHeight);
+
+            if (_exitButton != null)
+                _exitButton.Bounds = new Rectangle(buttonX, panelY + 160, buttonWidth, buttonHeight);
+        }
+
+        private void ToggleBorderlessFullscreen()
+        {
+            Window.ClientSizeChanged -= OnWindowResize;
+
+            _graphics.IsFullScreen = !_graphics.IsFullScreen;
+
+            if (_graphics.IsFullScreen)
+            {
+                _wasMaximizedBeforeFullscreen = (Window.ClientBounds.Width == GraphicsAdapter.DefaultAdapter.CurrentDisplayMode.Width);
+
+                _graphics.PreferredBackBufferWidth = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode.Width;
+                _graphics.PreferredBackBufferHeight = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode.Height;
+                _graphics.HardwareModeSwitch = false;
+            }
+            else
+            {
+                if (_wasMaximizedBeforeFullscreen)
+                {
+                    _graphics.PreferredBackBufferWidth = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode.Width;
+                    _graphics.PreferredBackBufferHeight = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode.Height - 40;
+                }
+                else
+                {
+                    _graphics.PreferredBackBufferWidth = 1280;
+                    _graphics.PreferredBackBufferHeight = 720;
+                }
+
+                _graphics.HardwareModeSwitch = true;
+            }
+
+            _graphics.ApplyChanges();
+
+            GraphicsDevice.Viewport = new Viewport(0, 0, Window.ClientBounds.Width, Window.ClientBounds.Height);
+
+            RecalculateUILayout();
+
+            Window.ClientSizeChanged += OnWindowResize;
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world\GameEconomy.cs =====
+using System;
+using System.Collections.Generic;
+
+namespace open_world
+{
+    // Obecný upgrade - shop UI (na desktopu i Androidu) prochází Upgrades list
+    // a nemusí vědět nic o tom, co konkrétně "Dosah" nebo "Rozptyl" znamenají.
+    // Přidání nového upgradu (počet kachen, rychlost, cokoliv) = nová položka
+    // do seznamu v GameEconomy, žádná změna v shop UI kódu.
+    public class Upgrade
+    {
+        public string Name;
+        public Func<string> ValueText;
+        public Func<bool> CanBuy;
+        public Func<int> NextCost;
+        public Func<bool> TryBuy;
+    }
+
+    public static class GameEconomy
+    {
+        public const int DuckValue = 5;
+
+        public static int Money = 0;
+
+        private static int _rangeTier = 0;
+        private static int _spreadTier = 0;
+        private static int _duckCountTier = 0;
+
+        private static readonly float[] RangeValues = { 50f, 80f, 120f, 180f, 260f };
+        private static readonly float[] SpreadValues = { 8f, 12f, 16f, 20f, 26f }; // roste - širší kužel = víc kachen najednou
+        private static readonly int[] DuckCountValues = { 100, 500, 2000, 10000 };
+
+        private static readonly int[] RangeCosts = { 20, 40, 80, 150 };
+        private static readonly int[] SpreadCosts = { 25, 50, 100, 200 };
+        private static readonly int[] DuckCountCosts = { 100, 400, 1000 };
+
+        public static float CurrentRange => RangeValues[_rangeTier];
+        public static float CurrentSpread => SpreadValues[_spreadTier];
+        public static int CurrentMaxDucks => DuckCountValues[_duckCountTier];
+
+        // --- Obecný seznam upgradů pro UI ---
+        // Až budeš chtít přidat další (např. max počet kachen ve hře), stačí sem
+        // dopsat další Upgrade { ... } se svou vlastní logikou - shop se o tom
+        // dozví automaticky, protože jen iteruje tenhle list.
+        public static readonly List<Upgrade> Upgrades = new List<Upgrade>
+        {
+            new Upgrade
+            {
+                Name = "Dosah",
+                ValueText = () => $"{CurrentRange:0} m",
+                CanBuy = () => _rangeTier < RangeValues.Length - 1,
+                NextCost = () => _rangeTier < RangeCosts.Length ? RangeCosts[_rangeTier] : -1,
+                TryBuy = () =>
+                {
+                    if (_rangeTier >= RangeValues.Length - 1) return false;
+                    int cost = RangeCosts[_rangeTier];
+                    if (Money < cost) return false;
+                    Money -= cost;
+                    _rangeTier++;
+                    return true;
+                }
+            },
+            new Upgrade
+            {
+                Name = "Rozptyl",
+                ValueText = () => $"{CurrentSpread:0}°",
+                CanBuy = () => _spreadTier < SpreadValues.Length - 1,
+                NextCost = () => _spreadTier < SpreadCosts.Length ? SpreadCosts[_spreadTier] : -1,
+                TryBuy = () =>
+                {
+                    if (_spreadTier >= SpreadValues.Length - 1) return false;
+                    int cost = SpreadCosts[_spreadTier];
+                    if (Money < cost) return false;
+                    Money -= cost;
+                    _spreadTier++;
+                    return true;
+                }
+            },
+            new Upgrade
+            {
+                Name = "Kachny",
+                ValueText = () => $"{CurrentMaxDucks}",
+                CanBuy = () => _duckCountTier < DuckCountValues.Length - 1,
+                NextCost = () => _duckCountTier < DuckCountCosts.Length ? DuckCountCosts[_duckCountTier] : -1,
+                TryBuy = () =>
+                {
+                    if (_duckCountTier >= DuckCountValues.Length - 1) return false;
+                    int cost = DuckCountCosts[_duckCountTier];
+                    if (Money < cost) return false;
+                    Money -= cost;
+                    _duckCountTier++;
+                    return true;
+                }
+            }
+        };
+    }
+}
+
+===== SOUBOR: P:\open-world\Content\DuckInstancing.fx =====
+// DuckInstancing_v3.fx
+// Instance data jsou teď MENŠÍ (40 bajtů místo 64+) a GPU si mezi CPU updaty
+// polohu i natočení dopočítává sama extrapolací (Position + Velocity * elapsed).
+// CPU tak nemusí posílat novou pozici každý frame pro každou kachnu.
+
+#if OPENGL
+    #define SV_POSITION POSITION
+    #define VS_SHADERMODEL vs_3_0
+    #define PS_SHADERMODEL ps_3_0
+#else
+    #define VS_SHADERMODEL vs_4_0_level_9_1
+    #define PS_SHADERMODEL ps_4_0_level_9_1
+#endif
+
+float4x4 View;
+float4x4 Projection;
+
+float3 AmbientColor;
+float3 DiffuseColor;
+float3 LightDirection;
+
+float Time;              // gameTime.TotalGameTime.TotalSeconds
+float FlapAmplitude;
+float DuckScale;          // dřív Matrix.CreateScale(1.5f), teď jako parametr
+
+static const float WingRootX = 0.5;
+
+struct VertexShaderInput
+{
+    float4 Position   : POSITION0;
+    float3 Normal     : NORMAL0;
+    float4 Color      : COLOR0;
+
+    // --- Instance data (stream 1) ---
+    float3 InstancePosition : POSITION1;   // pozice v čase InstanceLastUpdateTime
+    float3 InstanceVelocity : POSITION2;   // pro extrapolaci pozice
+    float2 YawAndTime       : TEXCOORD0;   // x = natočení (yaw), y = LastUpdateTime
+    float2 FlapParams       : TEXCOORD1;   // x = fáze, y = rychlost mávání
+};
+
+struct VertexShaderOutput
+{
+    float4 Position : SV_Position;
+    float4 Color    : COLOR0;
+};
+
+VertexShaderOutput MainVS(in VertexShaderInput input)
+{
+    VertexShaderOutput output;
+
+    // --- 1. MÁVÁNÍ KŘÍDEL (v lokálním prostoru, binární hinge - viz předchozí verze) ---
+    float x = input.Position.x;
+    float side = sign(x);
+    float wingMask = step(WingRootX, abs(x));
+    float flapAngle = sin(Time * input.FlapParams.y + input.FlapParams.x) * FlapAmplitude * wingMask;
+
+    float hingeX = side * WingRootX;
+    float relX = x - hingeX;
+    float fs = sin(flapAngle);
+    float fc = cos(flapAngle);
+
+    float3 flappedPosition = input.Position.xyz;
+    flappedPosition.x = hingeX + relX * fc;
+    flappedPosition.y = input.Position.y + relX * fs * side;
+
+    float3 flappedNormal = input.Normal;
+    flappedNormal.x = input.Normal.x * fc - input.Normal.y * fs * side;
+    flappedNormal.y = input.Normal.y * fc + input.Normal.x * fs * side;
+
+    // --- 2. EXTRAPOLACE POZICE A NATOČENÍ (nahrazuje předpočítanou world matici) ---
+    float elapsed = Time - input.YawAndTime.y;
+    float3 extrapolatedPos = input.InstancePosition + input.InstanceVelocity * elapsed;
+
+    float yaw = input.YawAndTime.x; // natočení se mezi CPU updaty nemění (zjednodušení)
+    float yc = cos(yaw);
+    float ys = sin(yaw);
+
+    // Ruční sestavení rotace kolem Y + scale (nahrazuje Matrix.CreateRotationY * CreateScale)
+    float3 scaled = flappedPosition * DuckScale;
+    float3 rotated = float3(
+        scaled.x * yc + scaled.z * ys,
+        scaled.y,
+        -scaled.x * ys + scaled.z * yc
+    );
+
+    float3 worldPos = rotated + extrapolatedPos;
+
+    float3 rotatedNormal = float3(
+        flappedNormal.x * yc + flappedNormal.z * ys,
+        flappedNormal.y,
+        -flappedNormal.x * ys + flappedNormal.z * yc
+    );
+
+    float4 viewPosition = mul(float4(worldPos, 1.0), View);
+    output.Position = mul(viewPosition, Projection);
+
+    float3 worldNormal = normalize(rotatedNormal);
+    float lightAmount = saturate(dot(worldNormal, -LightDirection));
+    float3 lighting = AmbientColor + DiffuseColor * lightAmount;
+
+    output.Color = float4(input.Color.rgb * lighting, input.Color.a);
+
+    return output;
+}
+
+float4 MainPS(VertexShaderOutput input) : COLOR
+{
+    return input.Color;
+}
+
+technique Instancing
+{
+    pass P0
+    {
+        VertexShader = compile VS_SHADERMODEL MainVS();
+        PixelShader  = compile PS_SHADERMODEL MainPS();
+    }
+}
+
+
+===== SOUBOR: P:\open-world-android\Activity1.cs =====
+using Android.App;
+using Android.Content.PM;
+using Android.OS;
+using Android.Views;
+using Android.Widget;
+using Android.Graphics;
+using Microsoft.Xna.Framework;
+using open_world;
+using System;
+
+namespace open_world_android
+{
+    [Activity(
+        Label = "@string/app_name",
+        MainLauncher = true,
+        Icon = "@drawable/icon",
+        AlwaysRetainTaskState = true,
+        LaunchMode = LaunchMode.SingleInstance,
+        ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize |
+                     ConfigChanges.ScreenLayout | ConfigChanges.KeyboardHidden |
+                     ConfigChanges.UiMode,
+        ScreenOrientation = ScreenOrientation.Landscape
+
+    )]
+    public class Activity1 : AndroidGameActivity
+    {
+        private Game1 _game;
+        private View _view;
+        public static TextView FpsTextView;
+
+        protected override void OnCreate(Bundle bundle)
+        {
+            base.OnCreate(bundle);
+
+            _game = new Game1();
+            _view = _game.Services.GetService(typeof(View)) as View;
+
+            // NOVÉ: místo SetContentView(_view) přímo obalíme _view do FrameLayoutu
+            // spolu s nativními ovládacími prvky (joystick, tlačítka) navrch.
+            // Herní View zůstává úplně stejné, jen má teď "sourozence" ve stejném layoutu.
+            var overlay = new FrameLayout(this);
+            overlay.AddView(_view);
+
+            FpsTextView = new TextView(this)
+            {
+                Text = "FPS: 0",
+                TextSize = 18f
+            };
+            FpsTextView.SetTextColor(Android.Graphics.Color.White);
+            FpsTextView.SetShadowLayer(3, 1, 1, Android.Graphics.Color.Black); // Pro dobrou čitelnost
+
+            var fpsParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WrapContent,
+                FrameLayout.LayoutParams.WrapContent)
+            {
+                Gravity = GravityFlags.Top | GravityFlags.Left,
+                LeftMargin = 30,
+                TopMargin = 30
+            };
+            overlay.AddView(FpsTextView, fpsParams);
+
+            // --- Joystick (spodní pás obrazovky, reaguje jen v levé půlce - viz JoystickView) ---
+            var joystick = new JoystickView(this);
+            var displayMetrics = Resources.DisplayMetrics;
+            int halfWidth = (int)(displayMetrics.WidthPixels / 2);
+
+            var joystickParams = new FrameLayout.LayoutParams(halfWidth, 400)
+            { Gravity = GravityFlags.Bottom | GravityFlags.Left };
+            overlay.AddView(joystick, joystickParams);
+
+            // --- Tlačítka ---
+            AddButton(overlay, "SKOK", GravityFlags.Bottom | GravityFlags.Right, 40, 40,
+                () => NativeInput.JumpPressedThisFrame = true);
+
+            AddButton(overlay, "BĚH", GravityFlags.Bottom | GravityFlags.Right, 240, 40,
+                () => NativeInput.RunToggleActive = !NativeInput.RunToggleActive, isToggle: true);
+
+            AddButton(overlay, "PAL", GravityFlags.Bottom | GravityFlags.Right, 440, 40,
+                () => NativeInput.ShootPressedThisFrame = true);
+            AddButton(overlay, "OBCHOD", GravityFlags.Top | GravityFlags.Left, 40, 40,
+                () => ShowShopDialog());
+            // V OnCreate, hned za všemi ostatními prvky (před SetContentView):
+            var crosshairView = new TextView(this)
+            {
+                Text = "+",
+                TextSize = 28f,
+                Gravity = GravityFlags.Center
+            };
+            crosshairView.SetTextColor(Android.Graphics.Color.White); // Nebo bílá
+            crosshairView.SetBackgroundColor(Android.Graphics.Color.Transparent);
+
+            // Důležité: ať neblokuje dotyky pro hru pod ním
+            crosshairView.Touch += (s, e) => { e.Handled = false; };
+
+            var crosshairParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MatchParent,
+                FrameLayout.LayoutParams.MatchParent);
+
+            overlay.AddView(crosshairView, crosshairParams);
+
+            SetContentView(overlay);
+
+            _game.Run();
+            ApplyImmersiveMode();
+        }
+
+        private void AddButton(FrameLayout parent, string text, GravityFlags gravity,
+                                int marginRightOrLeft, int marginBottom, Action onClick, bool isToggle = false)
+        {
+            var button = new Android.Widget.Button(this) { Text = text };
+
+            // Definice barev
+            var defaultBgColor = new Android.Graphics.Color(255, 255, 255, 90);  // Poloprůhledná bílá
+            var activeBgColor = new Android.Graphics.Color(76, 175, 80, 200);     // Zelená při aktivaci
+
+            // Nastavení bílého textu a základního pozadí
+            button.SetTextColor(Android.Graphics.Color.White);
+            button.SetBackgroundColor(defaultBgColor);
+            button.Clickable = true;
+            button.Focusable = true;
+
+            var lp = new FrameLayout.LayoutParams(180, 180) { Gravity = gravity };
+            if (gravity.HasFlag(GravityFlags.Right)) lp.RightMargin = marginRightOrLeft;
+            if (gravity.HasFlag(GravityFlags.Left)) lp.LeftMargin = marginRightOrLeft;
+            if (gravity.HasFlag(GravityFlags.Bottom)) lp.BottomMargin = marginBottom;
+            if (gravity.HasFlag(GravityFlags.Top)) lp.TopMargin = marginBottom;
+
+            bool isActive = false;
+
+            button.Click += (s, e) =>
+            {
+                // Spustí předaný Action (např. nastavení NativeInput)
+                onClick();
+
+                // Pokud jde o přepínací tlačítko (např. BĚH), změní barvu
+                if (isToggle)
+                {
+                    isActive = !isActive;
+                    button.SetBackgroundColor(isActive ? activeBgColor : defaultBgColor);
+                }
+            };
+
+            parent.AddView(button, lp);
+        }
+
+        protected override void OnResume()
+        {
+            base.OnResume();
+            ApplyImmersiveMode();
+        }
+
+        private void ApplyImmersiveMode()
+        {
+            if (OperatingSystem.IsAndroidVersionAtLeast(30))
+            {
+                Window.SetDecorFitsSystemWindows(false);
+
+                var controller = Window.InsetsController;
+                if (controller != null)
+                {
+                    controller.Hide(WindowInsets.Type.SystemBars());
+                    controller.SystemBarsBehavior = (int)WindowInsetsControllerBehavior.ShowTransientBarsBySwipe;
+                }
+            }
+            else
+            {
+#pragma warning disable CA1422
+                Window.DecorView.SystemUiFlags =
+                    SystemUiFlags.LayoutStable
+                    | SystemUiFlags.LayoutHideNavigation
+                    | SystemUiFlags.LayoutFullscreen
+                    | SystemUiFlags.HideNavigation
+                    | SystemUiFlags.Fullscreen
+                    | SystemUiFlags.ImmersiveSticky;
+#pragma warning restore CA1422
+            }
+        }
+        private void ShowShopDialog()
+        {
+            // Připravíme si pole položek pro dialog
+            var upgrades = GameEconomy.Upgrades;
+            string[] options = new string[upgrades.Count];
+
+            for (int i = 0; i < upgrades.Count; i++)
+            {
+                var up = upgrades[i];
+                string costText = up.CanBuy() ? $"[${up.NextCost()}]" : "(MAX)";
+                options[i] = $"{up.Name}: {up.ValueText()}  {costText}";
+            }
+
+            var builder = new AlertDialog.Builder(this);
+            builder.SetTitle($"Obchod (Peníze: ${GameEconomy.Money})");
+
+            // Zobrazí seznam všech upgradů jako vybíratelná položková nabídka
+            builder.SetItems(options, (s, e) =>
+            {
+                int selectedIndex = e.Which;
+                if (selectedIndex >= 0 && selectedIndex < upgrades.Count)
+                {
+                    var chosenUpgrade = upgrades[selectedIndex];
+                    if (chosenUpgrade.CanBuy())
+                    {
+                        chosenUpgrade.TryBuy();
+                    }
+                    // Dialog hned zase otevřeme aktualizovaný, aby hráč viděl nové peníze/tier
+                    ShowShopDialog();
+                }
+            });
+
+            builder.SetNegativeButton("Zavřít", (s, e) => { });
+            builder.Show();
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world-android\JoystickView.cs =====
+using System;
+using Android.Content;
+using Android.Graphics;
+using Android.Views;
+
+namespace open_world
+{
+    // Kreslí se přes Android Canvas (View.OnDraw), ne přes MonoGame SpriteBatch -
+    // proto ho žádný GL/GLES state z DuckManager nemůže ovlivnit.
+    public class JoystickView : View
+    {
+        private const float MaxRadius = 90f;
+
+        private Paint _basePaint;
+        private Paint _stickPaint;
+
+        private bool _active;
+        private PointF _center;
+        private PointF _stickPos;
+
+        public JoystickView(Context context) : base(context)
+        {
+            _basePaint = new Paint(PaintFlags.AntiAlias) { Color = new Color(255, 255, 255, 60) };
+            _stickPaint = new Paint(PaintFlags.AntiAlias) { Color = new Color(255, 255, 255, 150) };
+        }
+
+        public override bool OnTouchEvent(MotionEvent e)
+        {
+            switch (e.ActionMasked)
+            {
+                case MotionEventActions.Down:
+                    _active = true;
+                    _center = new PointF(e.GetX(), e.GetY());
+                    _stickPos = _center;
+                    break;
+
+                case MotionEventActions.Move:
+                    if (_active)
+                    {
+                        _stickPos = new PointF(e.GetX(), e.GetY());
+                        UpdateMovementVector();
+                    }
+                    break;
+
+                case MotionEventActions.Up:
+                case MotionEventActions.Cancel:
+                    _active = false;
+                    NativeInput.MovementVector = Microsoft.Xna.Framework.Vector2.Zero;
+                    break;
+            }
+
+            Invalidate(); // vynutí překreslení
+            return true;
+        }
+
+        private void UpdateMovementVector()
+        {
+            float dx = _stickPos.X - _center.X;
+            float dy = _stickPos.Y - _center.Y;
+            float dist = MathF.Sqrt(dx * dx + dy * dy);
+
+            if (dist > MaxRadius)
+            {
+                dx = dx / dist * MaxRadius;
+                dy = dy / dist * MaxRadius;
+                _stickPos = new PointF(_center.X + dx, _center.Y + dy);
+            }
+
+            // Obrazovkové Y roste dolů -> tažení nahoru (záporné dy) = dopředu (kladné Y).
+            var vec = new Microsoft.Xna.Framework.Vector2(dx / MaxRadius, -dy / MaxRadius);
+            if (vec.LengthSquared() > 1f) vec.Normalize();
+
+            NativeInput.MovementVector = vec;
+        }
+
+        protected override void OnDraw(Canvas canvas)
+        {
+            base.OnDraw(canvas);
+            if (!_active) return;
+
+            canvas.DrawCircle(_center.X, _center.Y, MaxRadius, _basePaint);
+            canvas.DrawCircle(_stickPos.X, _stickPos.Y, 30f, _stickPaint);
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world-android\NativeInput.cs =====
+using Microsoft.Xna.Framework;
+
+namespace open_world
+{
+    // Sem zapisují nativní Android View prvky (tlačítka, joystick) z Activity1.cs.
+    // Input.cs si to jen čte - stejné jméno metod/vlastností jako předtím,
+    // takže Game1.cs se nemusí měnit vůbec.
+    public static class NativeInput
+    {
+        public static bool JumpPressedThisFrame; // nastaví OnClick, Input.cs po přečtení vynuluje
+        public static bool ShootPressedThisFrame;
+        public static bool PausePressedThisFrame;
+        public static bool RunToggleActive;
+        public static Vector2 MovementVector; // -1..1 na obou osách, píše JoystickView
+    }
+}
+

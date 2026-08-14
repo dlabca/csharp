@@ -43,6 +43,7 @@
     <Compile Include="..\open-world\MathExtensions.cs" />
     <Compile Include="..\open-world\TerrainGenerator.cs" />
     <Compile Include="..\open-world\GameEconomy.cs" />
+    <Compile Include="..\open-world\DesktopShopUI.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Řekne projektu, kde najít hlavní konfigurační soubor obsahu -->
