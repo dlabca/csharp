@@ -77,9 +77,8 @@ namespace open_world
         private bool vsync = false;
         public const float minTerrainHeight = -8f;
         public const float maxTerrainHeight = 40f;
-#if !ANDROID
+        private WeaponRenderer _weaponRenderer;
         private DesktopShopUI _shopUI;
-#endif
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
@@ -171,9 +170,11 @@ namespace open_world
                 _currentState = GameState.Playing;
                 IsMouseVisible = false;
             }
-#if !ANDROID       
-            _shopUI = new DesktopShopUI(_font, _pixelTexture);
-#endif
+            else
+            {
+                _shopUI = new DesktopShopUI(_font, _pixelTexture);
+            }
+            _weaponRenderer = new WeaponRenderer(GraphicsDevice);
         }
 
         protected override void Update(GameTime gameTime)
@@ -303,8 +304,6 @@ namespace open_world
                         GameEconomy.CurrentSpread,
                         (float)gameTime.TotalGameTime.TotalSeconds
                     );
-
-                    GameEconomy.Money += killed * GameEconomy.DuckValue;
                 }
                 if (!Input.IsTouchPlatform && Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B))
                 {
@@ -319,13 +318,17 @@ namespace open_world
                     _duckManager.GrowFlockTo(GameEconomy.CurrentMaxDucks, (float)gameTime.TotalGameTime.TotalSeconds);
                 }
 
-                _duckManager.Update((float)gameTime.ElapsedGameTime.TotalSeconds, (float)gameTime.TotalGameTime.TotalSeconds);
+                _duckManager.Update(
+                    (float)gameTime.ElapsedGameTime.TotalSeconds,
+                    (float)gameTime.TotalGameTime.TotalSeconds,
+                    _cameraPosition // NOVÉ - pro kontrolu sebrání kachen ze země
+                );
             }
             else if (_currentState == GameState.Shop)
             {
-                _shopUI.Update(Input.CurrentMouseState);
+                _shopUI.Update(Input.CurrentMouseState, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
 
-                if (Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B) ||
+                if (_shopUI.CloseRequested ||
                     Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.Escape))
                 {
                     _currentState = GameState.Playing;
@@ -333,6 +336,7 @@ namespace open_world
                     Input.CenterMouse(Window);
                 }
             }
+
 
 
             base.Update(gameTime);
@@ -388,6 +392,7 @@ namespace open_world
                 Vector3.Normalize(new Vector3(-0.5f, -1.0f, -0.3f)),             // směr světla
                 (float)gameTime.TotalGameTime.TotalSeconds
             );
+            _weaponRenderer.Draw(view, projection, _cameraPosition, _cameraFront, _cameraUp);
 
             // Vracíme World matici zpět pro ostatní objekty
             _terrainEffect.World = Matrix.Identity;
@@ -436,9 +441,9 @@ namespace open_world
             }
 
             _spriteBatch.End();
-            if (_currentState == GameState.Shop)
+            if (_currentState == GameState.Shop && !Input.IsTouchPlatform)
             {
-                _shopUI.Draw(_spriteBatch, _roundedPanelTexture);
+                _shopUI.Draw(_spriteBatch, _roundedPanelTexture, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
             }
 
             base.Draw(gameTime);

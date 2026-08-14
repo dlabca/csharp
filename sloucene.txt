@@ -515,44 +515,81 @@ using Microsoft.Xna.Framework.Input;
 
 namespace open_world
 {
-    // Prochází GameEconomy.Upgrades a vygeneruje pro každý jedno tlačítko -
-    // přidáš nový Upgrade do GameEconomy, tady se objeví automaticky, žádná
-    // změna v tomhle souboru není potřeba.
     public class DesktopShopUI
     {
         private List<Button> _buttons = new List<Button>();
+
+        // NOVÉ: relativní Y offset každého tlačítka od panelu, drženo ODDĚLENĚ
+        // od btn.Bounds. btn.Bounds se každý frame přepisuje na ABSOLUTNÍ pozici,
+        // takže z něj nikdy nesmíš zpětně číst "kde bylo relativně" - proto ten
+        // předchozí bug (kumulativní drift každý frame).
+        private List<int> _buttonRelativeY = new List<int>();
+
+        private Button _closeButton;
         private SpriteFont _font;
         private Texture2D _pixelTexture;
+
+        public bool CloseRequested { get; private set; }
+
+        private const int ButtonSpacing = 60;
+        private const int HeaderHeight = 70;
 
         public DesktopShopUI(SpriteFont font, Texture2D pixelTexture)
         {
             _font = font;
             _pixelTexture = pixelTexture;
 
-            int y = 110;
+            int y = HeaderHeight;
             foreach (var upgrade in GameEconomy.Upgrades)
             {
-                var btn = new Button(new Rectangle(40, y, 360, 50), "");
-                var capturedUpgrade = upgrade; // closure - důležité, ať každé tlačítko koupí SVŮJ upgrade
+                var btn = new Button(new Rectangle(0, 0, 360, 50), "");
+                var capturedUpgrade = upgrade;
                 btn.OnClick += () => capturedUpgrade.TryBuy();
                 _buttons.Add(btn);
-                y += 60;
+                _buttonRelativeY.Add(y); // <- zdroj pravdy pro pozici, ne btn.Bounds
+                y += ButtonSpacing;
             }
+
+            _closeButton = new Button(new Rectangle(0, 0, 40, 40), "X");
+            _closeButton.OnClick += () => CloseRequested = true;
         }
 
-        public void Update(MouseState mouse)
+        private (int panelX, int panelY, int panelWidth, int panelHeight) GetPanelRect(int viewportWidth, int viewportHeight)
         {
-            foreach (var btn in _buttons) btn.Update(mouse);
+            int panelWidth = viewportWidth / 2;
+            int panelHeight = viewportHeight / 2;
+            int panelX = (viewportWidth - panelWidth) / 2;
+            int panelY = (viewportHeight - panelHeight) / 2;
+            return (panelX, panelY, panelWidth, panelHeight);
         }
 
-        public void Draw(SpriteBatch spriteBatch, Texture2D panelTexture)
+        public void Update(MouseState mouse, int viewportWidth, int viewportHeight)
         {
+            CloseRequested = false;
+
+            var (panelX, panelY, panelWidth, _) = GetPanelRect(viewportWidth, viewportHeight);
+
+            for (int i = 0; i < _buttons.Count; i++)
+            {
+                // Vždycky počítáno z NEMĚNNÉHO _buttonRelativeY[i], ne z btn.Bounds -
+                // žádná šance na kumulativní drift, ať se tohle zavolá kolikrát chce.
+                _buttons[i].Bounds = new Rectangle(panelX + 20, panelY + _buttonRelativeY[i], panelWidth - 40, 50);
+                _buttons[i].Update(mouse);
+            }
+
+            _closeButton.Bounds = new Rectangle(panelX + panelWidth - 50, panelY + 10, 40, 40);
+            _closeButton.Update(mouse);
+        }
+
+        public void Draw(SpriteBatch spriteBatch, Texture2D panelTexture, int viewportWidth, int viewportHeight)
+        {
+            var (panelX, panelY, panelWidth, panelHeight) = GetPanelRect(viewportWidth, viewportHeight);
+
             spriteBatch.Begin();
 
-            int panelHeight = _buttons.Count * 60 + 70;
-            spriteBatch.Draw(panelTexture, new Rectangle(20, 60, 400, panelHeight), new Color(20, 20, 30, 220));
-            spriteBatch.DrawString(_font, $"OBCHOD   $ {GameEconomy.Money}", new Vector2(40, 75), Color.White);
-            spriteBatch.DrawString(_font, "(B = zpět do hry)", new Vector2(40, 95), Color.Gray);
+            spriteBatch.Draw(panelTexture, new Rectangle(panelX, panelY, panelWidth, panelHeight), new Color(20, 20, 30, 230));
+            spriteBatch.DrawString(_font, $"OBCHOD   $ {GameEconomy.Money}", new Vector2(panelX + 20, panelY + 15), Color.White);
+            //spriteBatch.DrawString(_font, "Esc", new Vector2(panelX + panelWidth - 45, panelY + 55), Color.Gray);
 
             for (int i = 0; i < _buttons.Count; i++)
             {
@@ -565,11 +602,12 @@ namespace open_world
                 _buttons[i].Draw(spriteBatch, _font, _pixelTexture);
             }
 
+            _closeButton.Draw(spriteBatch, _font, _pixelTexture);
+
             spriteBatch.End();
         }
     }
 }
-
 
 ===== SOUBOR: P:\open-world\DuckManager.cs =====
 using System;
@@ -643,6 +681,13 @@ namespace open_world
         private const float DuckScale = 1.5f;
         private const float DuckBoundingRadius = 8.0f;
         public int Count => _ducks.Count;
+        public static bool InstantSellOnLanding = true;
+
+        private const float PickupRadius = 5.0f; // jak blízko musí být hráč, aby se kachna sebrala
+        private const float GravityAccel = -18f; // m/s^2, zrychlení pádu
+
+        private List<int> _groundedDuckIndices = new List<int>();
+
 
         private readonly Random _sharedRandom = new Random();
 
@@ -833,16 +878,20 @@ namespace open_world
 
             float yaw = MathF.Atan2(forward.X, forward.Z);
 
+            // ZMĚNA: flapSpeed = 0 pro umírající/přistálou kachnu -> sin(Time*0 + fáze)
+            // je konstanta, křídla zůstanou zamrzlá v jedné pozici, nemávají.
+            float flapSpeed = duck.IsDying ? 0f : 10.0f;
+
             return new DuckInstanceData
             {
                 Position = duck.Position,
                 Velocity = duck.Velocity,
                 YawAndTime = new Vector2(yaw, duck.LastUpdateTime),
-                FlapParams = new Vector2(duck.LastUpdateTime, 10.0f) // fáze odvozená z LastUpdateTime, stačí na desynchronizaci
+                FlapParams = new Vector2(duck.LastUpdateTime, flapSpeed)
             };
         }
 
-        public void Update(float deltaTime, float totalTime)
+        public void Update(float deltaTime, float totalTime, Vector3 playerPosition)
         {
             _lastKnownTotalTime = totalTime;
 
@@ -953,7 +1002,7 @@ namespace open_world
             }
 
             // Umírající kachny řešíme MIMO group-cyklus - každý frame, protože je jich málo.
-            UpdateDyingDucks(totalTime);
+            UpdateDyingDucks(totalTime, playerPosition);
         }
 
         // Malá pomocná metoda - lineární hledání v LoadedChunkCoords stačí,
@@ -971,35 +1020,40 @@ namespace open_world
         // Vrací počet zasažených (a rovnou recyklovaných) kachen.
         public int Shoot(Vector3 origin, Vector3 direction, float range, float spreadAngleDegrees, float totalTime)
         {
-            // cos() spočítáme JEDNOU za celý výstřel, ne pro každou kachnu -
-            // porovnávání dot product s touhle konstantou je pak jen násobení/porovnání.
             float cosThreshold = MathF.Cos(MathHelper.ToRadians(spreadAngleDegrees));
             float rangeSq = range * range;
             int killed = 0;
 
             for (int i = 0; i < _ducks.Count; i++)
             {
+                // Mrtvá/padající/ležící kachna už není platný cíl.
+                if (_ducks[i].IsDying) continue;
+
                 var data = _instanceData[i];
                 float elapsed = totalTime - data.YawAndTime.Y;
-                Vector3 duckPos = data.Position + data.Velocity * elapsed; // stejná extrapolace jako v Draw()
+                Vector3 duckPos = data.Position + data.Velocity * elapsed;
 
                 Vector3 toDuck = duckPos - origin;
                 float distSq = toDuck.LengthSquared();
 
-                if (distSq > rangeSq || distSq < 0.0001f) continue; // mimo dosah / kachna přímo v očích
+                if (distSq > rangeSq || distSq < 0.0001f) continue;
 
                 Vector3 dirToDuck = toDuck / MathF.Sqrt(distSq);
                 float dot = Vector3.Dot(dirToDuck, direction);
 
                 if (dot >= cosThreshold)
                 {
+                    // POZOR: žádné přičítání peněz tady - Shoot() jen odstartuje pád
+                    // (KillDuck). Peníze se připisují až v UpdateDyingDucks(), v momentě
+                    // kdy kachna doopravdy zmizí (dopadne / je sebrána).
                     KillDuck(i, totalTime);
                     killed++;
                 }
             }
 
-            return killed;
+            return killed; // pořád se hodí vrátit - třeba pro Debug.WriteLine nebo budoucí "zásah!" feedback
         }
+
 
         // Nastaví kachnu do "umírá" stavu - padá dolů konstantní rychlostí,
         // teprve po dopadu na zem se skutečně recykluje (teleportuje pryč).
@@ -1007,27 +1061,32 @@ namespace open_world
         {
             DuckInstance duck = _ducks[duckIndex];
 
-            if (duck.IsDying) return; // už padá, nezasahovat znovu
+            if (duck.IsDying) return;
 
             duck.IsDying = true;
-            duck.Velocity = new Vector3(0f, FallSpeed, 0f);
+
+            // ZMĚNA: půl vodorovné rychlosti si nechá (letěla dopředu, tak padá dopředu),
+            // + počáteční malá rychlost dolů - gravitace se o zbytek postará v UpdateDyingDucks.
+            Vector3 residualHorizontal = new Vector3(duck.Velocity.X, 0, duck.Velocity.Z) * 0.5f;
+            duck.Velocity = residualHorizontal + new Vector3(0f, -2f, 0f);
+
             duck.LastUpdateTime = totalTime;
 
             _ducks[duckIndex] = duck;
             _dyingDuckIndices.Add(duckIndex);
             _instanceData[duckIndex] = BuildInstanceData(duck);
 
-            // Okamžitý upload, ať pád začne vidět hned, ne až za dalších pár framů.
             _instanceBuffer.SetData(duckIndex * VertexStrideBytes, _instanceData, duckIndex, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
         }
 
         // Zpracuje VŠECHNY umírající kachny (je jich vždy jen pár) - volá se
         // každý frame z Update(), mimo group-cyklus. Když dopadnou na zem,
         // teprve tady se skutečně recyklují (RecycleDuck).
-        private void UpdateDyingDucks(float totalTime)
+        private void UpdateDyingDucks(float totalTime, Vector3 playerPosition)
         {
-            if (_dyingDuckIndices.Count == 0) return;
+            if (_dyingDuckIndices.Count == 0 && _groundedDuckIndices.Count == 0) return;
 
+            // --- Padající kachny (ve vzduchu) ---
             for (int idx = _dyingDuckIndices.Count - 1; idx >= 0; idx--)
             {
                 int i = _dyingDuckIndices[idx];
@@ -1036,6 +1095,9 @@ namespace open_world
                 float elapsed = totalTime - duck.LastUpdateTime;
                 if (elapsed <= 0f) continue;
 
+                // NOVÉ: skutečná gravitace - rychlost dolů roste s časem, takže dráha
+                // je oblouk/parabola, ne rovná čára jako předtím.
+                duck.Velocity.Y += GravityAccel * elapsed;
                 duck.Position += duck.Velocity * elapsed;
                 duck.LastUpdateTime = totalTime;
 
@@ -1043,17 +1105,53 @@ namespace open_world
 
                 if (duck.Position.Y <= groundH)
                 {
-                    // Dopadla - skutečná recyklace (teleport pryč, reset stavu)
-                    duck.IsDying = false; // RecycleDuck přepíše zbytek, ale tohle pro jistotu
-                    _ducks[i] = duck;
+                    duck.Position.Y = groundH;
                     _dyingDuckIndices.RemoveAt(idx);
-                    RecycleDuck(i, totalTime);
+
+                    if (InstantSellOnLanding)
+                    {
+                        GameEconomy.Money += GameEconomy.DuckValue; // NOVÉ - peníze až tady, ne u výstřelu
+                        duck.IsDying = false;
+                        _ducks[i] = duck;
+                        RecycleDuck(i, totalTime);
+                    }
+                    else
+                    {
+                        // beze změny - zůstává ležet, peníze dostane až při sebrání níž
+                        duck.Velocity = Vector3.Zero;
+                        _ducks[i] = duck;
+                        _instanceData[i] = BuildInstanceData(duck);
+                        _instanceBuffer.SetData(i * VertexStrideBytes, _instanceData, i, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
+                        _groundedDuckIndices.Add(i);
+                    }
                 }
                 else
                 {
                     _ducks[i] = duck;
                     _instanceData[i] = BuildInstanceData(duck);
                     _instanceBuffer.SetData(i * VertexStrideBytes, _instanceData, i, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
+                }
+            }
+
+            // --- Kachny ležící na zemi - čekají, až k nim hráč dojde ---
+            if (!InstantSellOnLanding)
+            {
+                float pickupRadiusSq = PickupRadius * PickupRadius;
+
+                for (int idx = _groundedDuckIndices.Count - 1; idx >= 0; idx--)
+                {
+                    int i = _groundedDuckIndices[idx];
+                    DuckInstance duck = _ducks[i];
+
+                    float distSq = Vector3.DistanceSquared(duck.Position, playerPosition);
+                    if (distSq <= pickupRadiusSq)
+                    {
+                        GameEconomy.Money += GameEconomy.DuckValue; // NOVÉ - peníze až za skutečné sebrání
+                        duck.IsDying = false;
+                        _ducks[i] = duck;
+                        _groundedDuckIndices.RemoveAt(idx);
+                        RecycleDuck(i, totalTime);
+                    }
                 }
             }
         }
@@ -1384,9 +1482,8 @@ namespace open_world
         private bool vsync = false;
         public const float minTerrainHeight = -8f;
         public const float maxTerrainHeight = 40f;
-#if !ANDROID
+        private WeaponRenderer _weaponRenderer;
         private DesktopShopUI _shopUI;
-#endif
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
@@ -1478,9 +1575,11 @@ namespace open_world
                 _currentState = GameState.Playing;
                 IsMouseVisible = false;
             }
-#if !ANDROID       
-            _shopUI = new DesktopShopUI(_font, _pixelTexture);
-#endif
+            else
+            {
+                _shopUI = new DesktopShopUI(_font, _pixelTexture);
+            }
+            _weaponRenderer = new WeaponRenderer(GraphicsDevice);
         }
 
         protected override void Update(GameTime gameTime)
@@ -1610,8 +1709,6 @@ namespace open_world
                         GameEconomy.CurrentSpread,
                         (float)gameTime.TotalGameTime.TotalSeconds
                     );
-
-                    GameEconomy.Money += killed * GameEconomy.DuckValue;
                 }
                 if (!Input.IsTouchPlatform && Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B))
                 {
@@ -1626,13 +1723,17 @@ namespace open_world
                     _duckManager.GrowFlockTo(GameEconomy.CurrentMaxDucks, (float)gameTime.TotalGameTime.TotalSeconds);
                 }
 
-                _duckManager.Update((float)gameTime.ElapsedGameTime.TotalSeconds, (float)gameTime.TotalGameTime.TotalSeconds);
+                _duckManager.Update(
+                    (float)gameTime.ElapsedGameTime.TotalSeconds,
+                    (float)gameTime.TotalGameTime.TotalSeconds,
+                    _cameraPosition // NOVÉ - pro kontrolu sebrání kachen ze země
+                );
             }
             else if (_currentState == GameState.Shop)
             {
-                _shopUI.Update(Input.CurrentMouseState);
+                _shopUI.Update(Input.CurrentMouseState, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
 
-                if (Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.B) ||
+                if (_shopUI.CloseRequested ||
                     Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.Escape))
                 {
                     _currentState = GameState.Playing;
@@ -1640,6 +1741,7 @@ namespace open_world
                     Input.CenterMouse(Window);
                 }
             }
+
 
 
             base.Update(gameTime);
@@ -1695,6 +1797,7 @@ namespace open_world
                 Vector3.Normalize(new Vector3(-0.5f, -1.0f, -0.3f)),             // směr světla
                 (float)gameTime.TotalGameTime.TotalSeconds
             );
+            _weaponRenderer.Draw(view, projection, _cameraPosition, _cameraFront, _cameraUp);
 
             // Vracíme World matici zpět pro ostatní objekty
             _terrainEffect.World = Matrix.Identity;
@@ -1743,9 +1846,9 @@ namespace open_world
             }
 
             _spriteBatch.End();
-            if (_currentState == GameState.Shop)
+            if (_currentState == GameState.Shop && !Input.IsTouchPlatform)
             {
-                _shopUI.Draw(_spriteBatch, _roundedPanelTexture);
+                _shopUI.Draw(_spriteBatch, _roundedPanelTexture, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
             }
 
             base.Draw(gameTime);
@@ -1965,6 +2068,553 @@ namespace open_world
                 }
             }
         };
+    }
+}
+
+===== SOUBOR: P:\open-world\input.cs =====
+using System;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
+using Microsoft.Xna.Framework.Input.Touch;
+
+namespace open_world
+{
+    // Funguje na obou platformách zároveň:
+    // - Desktop: klávesnice + myš (beze změny, pro rychlé testování v PC buildu)
+    // - Android: pohyb/skok/běh/pauza čtou z NativeInput (nativní Android View
+    //            tlačítka + JoystickView), rozhlížení (drag na pravé půlce) jede
+    //            přes MonoGame TouchPanel, protože tam žádný nativní View nepřekáží.
+    public static class Input
+    {
+        // ================= DESKTOP (beze změny) =================
+        public static KeyboardState CurrentKeyboardState { get; private set; }
+        public static KeyboardState PreviousKeyboardState { get; private set; }
+
+        public static MouseState CurrentMouseState { get; private set; }
+        public static MouseState PreviousMouseState { get; private set; }
+
+        // ================= SPOLEČNÉ VÝSTUPY (obě platformy do nich píšou) =================
+
+        public static Vector2 MouseDelta { get; private set; }
+
+        // ================= TOUCH STAV (jen look-drag, zbytek jde přes NativeInput) =================
+
+        private static int? _lookTouchId;
+        private static Vector2 _lookLastPos;
+
+        public static bool IsTouchPlatform => OperatingSystem.IsAndroid() || OperatingSystem.IsIOS();
+
+        public static void Update(GameWindow window)
+        {
+            if (IsTouchPlatform)
+            {
+                UpdateTouch(window);
+            }
+            else
+            {
+                UpdateDesktop(window);
+            }
+        }
+
+        private static void UpdateDesktop(GameWindow window)
+        {
+            PreviousKeyboardState = CurrentKeyboardState;
+            CurrentKeyboardState = Keyboard.GetState();
+
+            PreviousMouseState = CurrentMouseState;
+            CurrentMouseState = Mouse.GetState();
+
+            int centerX = window.ClientBounds.Width / 2;
+            int centerY = window.ClientBounds.Height / 2;
+
+            MouseDelta = new Vector2(
+                CurrentMouseState.X - centerX,
+                CurrentMouseState.Y - centerY
+            );
+        }
+
+        // Řeší JEN drag pro rozhlížení (pravá půlka obrazovky) - žádný nativní
+        // View tam nic nezakrývá, takže dotyky normálně propadnou do TouchPanelu.
+        private static void UpdateTouch(GameWindow window)
+        {
+            TouchCollection touches = TouchPanel.GetState();
+            int screenWidth = window.ClientBounds.Width;
+
+            bool lookTouchStillPresent = false;
+
+            foreach (TouchLocation touch in touches)
+            {
+                Vector2 pos = touch.Position;
+
+                switch (touch.State)
+                {
+                    case TouchLocationState.Pressed:
+                        if (pos.X >= screenWidth * 0.5f && !_lookTouchId.HasValue)
+                        {
+                            _lookTouchId = touch.Id;
+                            _lookLastPos = pos;
+                        }
+                        break;
+
+                    case TouchLocationState.Moved:
+                        if (_lookTouchId.HasValue && touch.Id == _lookTouchId.Value)
+                        {
+                            lookTouchStillPresent = true;
+                            Vector2 delta = pos - _lookLastPos;
+                            MouseDelta = delta;
+                            _lookLastPos = pos;
+                        }
+                        break;
+
+                    case TouchLocationState.Released:
+                    case TouchLocationState.Invalid:
+                        if (_lookTouchId.HasValue && touch.Id == _lookTouchId.Value)
+                        {
+                            _lookTouchId = null;
+                        }
+                        break;
+                }
+            }
+
+            if (_lookTouchId.HasValue && !lookTouchStillPresent)
+            {
+                bool stillInList = false;
+                foreach (var t in touches) if (t.Id == _lookTouchId.Value) stillInList = true;
+                if (!stillInList) _lookTouchId = null;
+            }
+
+            if (!lookTouchStillPresent) MouseDelta = Vector2.Zero;
+        }
+
+        public static void CenterMouse(GameWindow window)
+        {
+            if (IsTouchPlatform) return;
+
+            int centerX = window.ClientBounds.Width / 2;
+            int centerY = window.ClientBounds.Height / 2;
+            Mouse.SetPosition(centerX, centerY);
+        }
+
+        // ==========================================
+        //  SYSTÉMOVÉ A UI AKCE
+        // ==========================================
+
+        public static bool IsToggleFullscreenPressed() => !IsTouchPlatform && IsKeyPressed(Keys.F11);
+
+        public static bool IsPausePressed()
+        {
+            if (IsTouchPlatform)
+            {
+#if ANDROID
+                bool pressed = NativeInput.PausePressedThisFrame;
+                NativeInput.PausePressedThisFrame = false;
+                return pressed;
+#else
+                return false; // sem se na Desktopu nikdy nedostaneme (IsTouchPlatform == false)
+#endif
+            }
+            return IsKeyPressed(Keys.Escape);
+        }
+
+        public static bool IsMenuConfirmPressed()
+        {
+            if (IsTouchPlatform)
+            {
+#if ANDROID
+                bool pressed = NativeInput.PausePressedThisFrame;
+                NativeInput.PausePressedThisFrame = false;
+                return pressed;
+#else
+                return false;
+#endif
+            }
+            return IsKeyPressed(Keys.Enter) ||
+                   IsKeyPressed(Keys.Space) ||
+                   IsKeyPressed(Keys.Escape);
+        }
+
+        // ==========================================
+        //  HERNÍ AKCE (POHYB A AKCE HRÁČE) - na touch platformě z NativeInput
+        // ==========================================
+
+        public static bool IsJumpPressed()
+        {
+            if (IsTouchPlatform)
+            {
+#if ANDROID
+                bool pressed = NativeInput.JumpPressedThisFrame;
+                NativeInput.JumpPressedThisFrame = false;
+                return pressed;
+#else
+                return false;
+#endif
+            }
+            return IsKeyPressed(Keys.Space);
+        }
+
+        public static bool IsShootPressed()
+        {
+            if (IsTouchPlatform)
+            {
+#if ANDROID
+                bool pressed = NativeInput.ShootPressedThisFrame;
+                NativeInput.ShootPressedThisFrame = false;
+                return pressed;
+#else
+                return false;
+#endif
+            }
+            return CurrentMouseState.LeftButton == ButtonState.Pressed
+                && PreviousMouseState.LeftButton == ButtonState.Released;
+        }
+
+        public static bool IsRunning()
+        {
+            if (IsTouchPlatform)
+            {
+#if ANDROID
+                return NativeInput.RunToggleActive;
+#else
+                return false;
+#endif
+            }
+            return IsKeyDown(Keys.LeftShift) || IsKeyDown(Keys.RightShift);
+        }
+
+        public static Vector2 GetMovementVector()
+        {
+            if (IsTouchPlatform)
+            {
+#if ANDROID
+                return NativeInput.MovementVector;
+#else
+                return Vector2.Zero;
+#endif
+            }
+
+            Vector2 movement = Vector2.Zero;
+
+            if (IsKeyDown(Keys.W)) movement.Y += 1f;
+            if (IsKeyDown(Keys.S)) movement.Y -= 1f;
+            if (IsKeyDown(Keys.A)) movement.X -= 1f;
+            if (IsKeyDown(Keys.D)) movement.X += 1f;
+
+            if (movement != Vector2.Zero)
+                movement.Normalize();
+
+            return movement;
+        }
+
+        // ==========================================
+        //  POMOCNÉ METODY PRO KLÁVESNICI A MYŠ (jen desktop, beze změny)
+        // ==========================================
+
+        public static bool IsKeyDown(Keys key) => CurrentKeyboardState.IsKeyDown(key);
+        public static bool IsKeyPressed(Keys key) => CurrentKeyboardState.IsKeyDown(key) && PreviousKeyboardState.IsKeyUp(key);
+    }
+}
+
+===== SOUBOR: P:\open-world\MathExtensions.cs =====
+namespace open_world;
+
+public static class MathExtensions
+{
+    public static float Map(this float value, float fromSource, float toSource, float fromTarget, float toTarget)
+    {
+        return (value - fromSource) / (toSource - fromSource) * (toTarget - fromTarget) + fromTarget;
+    }
+}
+
+===== SOUBOR: P:\open-world\TerrainGenerator.cs =====
+using System;
+using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace open_world
+{
+    public class TerrainGenerator
+    {
+        private static FastNoiseLite _noise;
+
+        public static void InitNoise(int seed)
+        {
+            if (_noise == null)
+            {
+                _noise = new FastNoiseLite(seed);
+                _noise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+                _noise.SetFractalType(FastNoiseLite.FractalType.FBm);
+
+                _noise.SetFractalOctaves(3);
+                _noise.SetFractalGain(0.2f);
+                _noise.SetFrequency(0.0035f);
+            }
+        }
+
+        public static float GetHeight(float x, float z)
+        {
+            float rawNoise = _noise.GetNoise(x, z);
+            float normalized = rawNoise.Map(-1f, 1f, 0f, 1f);
+            float smoothHeight = MathF.Pow(normalized, 1.4f);
+            return smoothHeight.Map(0f, 1f, Game1.minTerrainHeight, Game1.maxTerrainHeight);
+        }
+
+        public static VertexBuffer GenerateTerrain(GraphicsDevice device, int size, int seed, out int indexCount, out IndexBuffer indexBuffer)
+        {
+            InitNoise(seed);
+
+            TerrainVertex[] vertices = new TerrainVertex[size * size];
+            List<int> indices = new List<int>();
+
+            for (int z = 0; z < size; z++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float height = GetHeight(x, z);
+
+                    Color color;
+                    if (height < 0.0f)
+                        color = new Color(140, 120, 80);
+                    else if (height < 2.5f)
+                        color = new Color(210, 190, 130);
+                    else if (height < 25.0f)
+                        color = new Color(60, 140, 50);
+                    else
+                        color = new Color(100, 100, 100);
+
+                    int index = z * size + x;
+                    vertices[index].Position = new Vector3(x - size / 2f, height, z - size / 2f);
+                    vertices[index].Color = color;
+                }
+            }
+
+            for (int z = 0; z < size; z++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float hL = GetHeight(x - 1, z);
+                    float hR = GetHeight(x + 1, z);
+                    float hD = GetHeight(x, z - 1);
+                    float hU = GetHeight(x, z + 1);
+
+                    Vector3 normal = Vector3.Normalize(new Vector3(hL - hR, 2.0f, hD - hU));
+                    vertices[z * size + x].Normal = normal;
+                }
+            }
+
+            for (int z = 0; z < size - 1; z++)
+            {
+                for (int x = 0; x < size - 1; x++)
+                {
+                    int topLeft = z * size + x;
+                    int topRight = topLeft + 1;
+                    int bottomLeft = (z + 1) * size + x;
+                    int bottomRight = bottomLeft + 1;
+
+                    indices.Add(topLeft);
+                    indices.Add(topRight);
+                    indices.Add(bottomLeft);
+
+                    indices.Add(topRight);
+                    indices.Add(bottomRight);
+                    indices.Add(bottomLeft);
+                }
+            }
+
+            VertexBuffer vBuffer = new VertexBuffer(device, TerrainVertex.VertexDeclaration, vertices.Length, BufferUsage.WriteOnly);
+            vBuffer.SetData(vertices);
+
+            indexCount = indices.Count;
+            indexBuffer = new IndexBuffer(device, IndexElementSize.ThirtyTwoBits, indexCount, BufferUsage.WriteOnly);
+            indexBuffer.SetData(indices.ToArray());
+
+            return vBuffer;
+        }
+    }
+}
+
+
+===== SOUBOR: P:\open-world\WeaponMeshGenerator.cs =====
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using System.Collections.Generic;
+
+namespace open_world
+{
+    public static class WeaponMeshGenerator
+    {
+        public static (VertexBuffer vb, IndexBuffer ib, int indexCount) CreateShotgunMesh(GraphicsDevice device)
+        {
+            var vertices = new List<TerrainVertex>();
+            var indices = new List<int>();
+
+            // Barevná paleta
+            Color steelColor = new Color(45, 48, 55);      // Kovové části (hlavně)
+            Color receiverColor = new Color(30, 32, 38);   // Tmavší pouzdro závěru
+            Color woodColor = new Color(85, 50, 30);       // Dřevěné části (pažba, předpažbí)
+            Color brassColor = new Color(180, 150, 60);    // Detaily (muška, spoušťový/lučíkový prostor)
+
+            void AddBox(Vector3 center, Vector3 size, Color color)
+            {
+                Vector3 h = size * 0.5f;
+                Vector3[] c = new Vector3[8]
+                {
+                    center + new Vector3(-h.X, -h.Y, -h.Z),
+                    center + new Vector3( h.X, -h.Y, -h.Z),
+                    center + new Vector3( h.X,  h.Y, -h.Z),
+                    center + new Vector3(-h.X,  h.Y, -h.Z),
+                    center + new Vector3(-h.X, -h.Y,  h.Z),
+                    center + new Vector3( h.X, -h.Y,  h.Z),
+                    center + new Vector3( h.X,  h.Y,  h.Z),
+                    center + new Vector3(-h.X,  h.Y,  h.Z),
+                };
+
+                void Quad(int a, int b, int cc, int d)
+                {
+                    Vector3 normal = Vector3.Normalize(Vector3.Cross(c[b] - c[a], c[cc] - c[a]));
+                    int baseIdx = vertices.Count;
+                    vertices.Add(new TerrainVertex { Position = c[a], Normal = normal, Color = color });
+                    vertices.Add(new TerrainVertex { Position = c[b], Normal = normal, Color = color });
+                    vertices.Add(new TerrainVertex { Position = c[cc], Normal = normal, Color = color });
+                    vertices.Add(new TerrainVertex { Position = c[d], Normal = normal, Color = color });
+                    indices.Add(baseIdx); indices.Add(baseIdx + 1); indices.Add(baseIdx + 2);
+                    indices.Add(baseIdx); indices.Add(baseIdx + 2); indices.Add(baseIdx + 3);
+                }
+
+                Quad(0, 1, 2, 3); // -Z
+                Quad(5, 4, 7, 6); // +Z
+                Quad(4, 0, 3, 7); // -X
+                Quad(1, 5, 6, 2); // +X
+                Quad(3, 2, 6, 7); // +Y
+                Quad(4, 5, 1, 0); // -Y
+            }
+
+            // --- SESTAVENÍ LEPŠÍ BROKOVNICE ---
+
+            // 1. Dvojhlaveň (dvě trubice vedle sebe směřující dopředu +Z)
+            float barrelLength = 1.1f;
+            float barrelZCenter = 0.45f;
+            AddBox(new Vector3(-0.025f, 0.02f, barrelZCenter), new Vector3(0.045f, 0.045f, barrelLength), steelColor);
+            AddBox(new Vector3( 0.025f, 0.02f, barrelZCenter), new Vector3(0.045f, 0.045f, barrelLength), steelColor);
+
+            // 2. Muška na konci hlavní
+            AddBox(new Vector3(0.0f, 0.048f, barrelZCenter + (barrelLength * 0.5f) - 0.02f), new Vector3(0.01f, 0.015f, 0.02f), brassColor);
+
+            // 3. Pouzdro závěru (Receiver - robustní středová část)
+            AddBox(new Vector3(0.0f, 0.005f, -0.15f), new Vector3(0.075f, 0.09f, 0.35f), receiverColor);
+
+            // 4. Předpažbí (Wood forend pod hlavní)
+            AddBox(new Vector3(0.0f, -0.015f, 0.25f), new Vector3(0.07f, 0.055f, 0.45f), woodColor);
+
+            // 5. Hlavní část pažby (Stock)
+            AddBox(new Vector3(0.0f, -0.04f, -0.55f), new Vector3(0.07f, 0.11f, 0.5f), woodColor);
+
+            // 6. Botka pažby (tlustší konec opřený o rameno)
+            AddBox(new Vector3(0.0f, -0.06f, -0.82f), new Vector3(0.075f, 0.14f, 0.08f), receiverColor);
+
+            // 7. Lučík a spoušť (malý detail naspod)
+            AddBox(new Vector3(0.0f, -0.055f, -0.22f), new Vector3(0.03f, 0.04f, 0.08f), steelColor);
+
+            // Vytvoření bufferů
+            var vb = new VertexBuffer(device, TerrainVertex.VertexDeclaration, vertices.Count, BufferUsage.WriteOnly);
+            vb.SetData(vertices.ToArray());
+            var ib = new IndexBuffer(device, IndexElementSize.ThirtyTwoBits, indices.Count, BufferUsage.WriteOnly);
+            ib.SetData(indices.ToArray());
+
+            return (vb, ib, indices.Count);
+        }
+    }
+}
+
+===== SOUBOR: P:\open-world\WeaponRenderer.cs =====
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace open_world
+{
+    // Zbraň se kreslí normálně jako součást 3D scény (ne jako 2D overlay) -
+    // jen její World matice se každý frame přepočítá tak, aby "sledovala" kameru
+    // s pevným offsetem (vpravo-dolů-dopředu). Používá BasicEffect, žádný nový shader.
+    public class WeaponRenderer
+    {
+        private GraphicsDevice _device;
+        private VertexBuffer _vb;
+        private IndexBuffer _ib;
+        private int _indexCount;
+        private BasicEffect _effect;
+
+        // Offset v prostoru KAMERY (ne světa) - X = vpravo, Y = nahoru, Z = dopředu.
+        // POZOR: musí být KLADNÉ - worldOffset = ... + forward * LocalOffset.Z,
+        // takže záporná hodnota by zbraň posunula ZA kameru (neviditelná).
+        private static readonly Vector3 LocalOffset = new Vector3(0.35f, -0.3f, 0.6f);
+        private const float Scale = 1.0f;
+
+        public WeaponRenderer(GraphicsDevice device)
+        {
+            _device = device;
+
+            var (vb, ib, count) = WeaponMeshGenerator.CreateShotgunMesh(device);
+            _vb = vb;
+            _ib = ib;
+            _indexCount = count;
+
+            _effect = new BasicEffect(device);
+            _effect.VertexColorEnabled = true;
+            _effect.EnableDefaultLighting();
+            _effect.AmbientLightColor = new Vector3(0.5f, 0.5f, 0.55f);
+        }
+
+        public void Draw(Matrix view, Matrix projection, Vector3 cameraPosition, Vector3 cameraFront, Vector3 cameraUp)
+        {
+            Vector3 forward = Vector3.Normalize(cameraFront);
+            Vector3 right = Vector3.Normalize(Vector3.Cross(forward, cameraUp));
+            Vector3 up = Vector3.Cross(right, forward);
+
+            // Poskládání world pozice zbraně z lokálního offsetu (kamera-relativní)
+            Vector3 worldOffset = right * LocalOffset.X + up * LocalOffset.Y + forward * LocalOffset.Z;
+            Vector3 weaponPosition = cameraPosition + worldOffset;
+
+            // Rotace zbraně = stejná orientace jako kamera (natočená stejným směrem).
+            // Lokální +Z osa modelu (kam míří hlaveň, viz WeaponMeshGenerator) se
+            // mapuje na world "forward" - MUSÍ být +forward, ne -forward, jinak by
+            // hlaveň mířila zpátky na hráče místo dopředu.
+            Matrix rotation = new Matrix(
+                right.X, right.Y, right.Z, 0,
+                up.X, up.Y, up.Z, 0,
+                forward.X, forward.Y, forward.Z, 0,
+                0, 0, 0, 1
+            );
+
+            _effect.World = Matrix.CreateScale(Scale) * rotation * Matrix.CreateTranslation(weaponPosition);
+            _effect.View = view;
+            _effect.Projection = projection;
+
+            // DŮLEŽITÉ: zbraň musí být vždycky "nad" terénem/kachnami, i když je
+            // technicky blízko kamery (a tudíž blízko near-plane) - normální
+            // DepthStencilState.Default by měl fungovat, ale pokud by zbraň
+            // "prosvítala" přes terén, sem patří případný zásah do RasterizerState.
+            _device.SetVertexBuffer(_vb);
+            _device.Indices = _ib;
+
+            // Pojistka proti winding chybám v AddBox (stejná rodina bugu jako u kachny) -
+            // je to jen pár desítek trojúhelníků, vypnutí cullingu tu nic nestojí.
+            var previousRasterizerState = _device.RasterizerState;
+            _device.RasterizerState = RasterizerState.CullNone;
+
+            foreach (EffectPass pass in _effect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                _device.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _indexCount / 3);
+            }
+
+            _device.RasterizerState = previousRasterizerState;
+        }
+
+        public void Unload()
+        {
+            _vb?.Dispose();
+            _ib?.Dispose();
+        }
     }
 }
 

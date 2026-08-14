@@ -69,6 +69,13 @@ namespace open_world
         private const float DuckScale = 1.5f;
         private const float DuckBoundingRadius = 8.0f;
         public int Count => _ducks.Count;
+        public static bool InstantSellOnLanding = true;
+
+        private const float PickupRadius = 5.0f; // jak blízko musí být hráč, aby se kachna sebrala
+        private const float GravityAccel = -18f; // m/s^2, zrychlení pádu
+
+        private List<int> _groundedDuckIndices = new List<int>();
+
 
         private readonly Random _sharedRandom = new Random();
 
@@ -259,16 +266,20 @@ namespace open_world
 
             float yaw = MathF.Atan2(forward.X, forward.Z);
 
+            // ZMĚNA: flapSpeed = 0 pro umírající/přistálou kachnu -> sin(Time*0 + fáze)
+            // je konstanta, křídla zůstanou zamrzlá v jedné pozici, nemávají.
+            float flapSpeed = duck.IsDying ? 0f : 10.0f;
+
             return new DuckInstanceData
             {
                 Position = duck.Position,
                 Velocity = duck.Velocity,
                 YawAndTime = new Vector2(yaw, duck.LastUpdateTime),
-                FlapParams = new Vector2(duck.LastUpdateTime, 10.0f) // fáze odvozená z LastUpdateTime, stačí na desynchronizaci
+                FlapParams = new Vector2(duck.LastUpdateTime, flapSpeed)
             };
         }
 
-        public void Update(float deltaTime, float totalTime)
+        public void Update(float deltaTime, float totalTime, Vector3 playerPosition)
         {
             _lastKnownTotalTime = totalTime;
 
@@ -379,7 +390,7 @@ namespace open_world
             }
 
             // Umírající kachny řešíme MIMO group-cyklus - každý frame, protože je jich málo.
-            UpdateDyingDucks(totalTime);
+            UpdateDyingDucks(totalTime, playerPosition);
         }
 
         // Malá pomocná metoda - lineární hledání v LoadedChunkCoords stačí,
@@ -397,35 +408,40 @@ namespace open_world
         // Vrací počet zasažených (a rovnou recyklovaných) kachen.
         public int Shoot(Vector3 origin, Vector3 direction, float range, float spreadAngleDegrees, float totalTime)
         {
-            // cos() spočítáme JEDNOU za celý výstřel, ne pro každou kachnu -
-            // porovnávání dot product s touhle konstantou je pak jen násobení/porovnání.
             float cosThreshold = MathF.Cos(MathHelper.ToRadians(spreadAngleDegrees));
             float rangeSq = range * range;
             int killed = 0;
 
             for (int i = 0; i < _ducks.Count; i++)
             {
+                // Mrtvá/padající/ležící kachna už není platný cíl.
+                if (_ducks[i].IsDying) continue;
+
                 var data = _instanceData[i];
                 float elapsed = totalTime - data.YawAndTime.Y;
-                Vector3 duckPos = data.Position + data.Velocity * elapsed; // stejná extrapolace jako v Draw()
+                Vector3 duckPos = data.Position + data.Velocity * elapsed;
 
                 Vector3 toDuck = duckPos - origin;
                 float distSq = toDuck.LengthSquared();
 
-                if (distSq > rangeSq || distSq < 0.0001f) continue; // mimo dosah / kachna přímo v očích
+                if (distSq > rangeSq || distSq < 0.0001f) continue;
 
                 Vector3 dirToDuck = toDuck / MathF.Sqrt(distSq);
                 float dot = Vector3.Dot(dirToDuck, direction);
 
                 if (dot >= cosThreshold)
                 {
+                    // POZOR: žádné přičítání peněz tady - Shoot() jen odstartuje pád
+                    // (KillDuck). Peníze se připisují až v UpdateDyingDucks(), v momentě
+                    // kdy kachna doopravdy zmizí (dopadne / je sebrána).
                     KillDuck(i, totalTime);
                     killed++;
                 }
             }
 
-            return killed;
+            return killed; // pořád se hodí vrátit - třeba pro Debug.WriteLine nebo budoucí "zásah!" feedback
         }
+
 
         // Nastaví kachnu do "umírá" stavu - padá dolů konstantní rychlostí,
         // teprve po dopadu na zem se skutečně recykluje (teleportuje pryč).
@@ -433,27 +449,32 @@ namespace open_world
         {
             DuckInstance duck = _ducks[duckIndex];
 
-            if (duck.IsDying) return; // už padá, nezasahovat znovu
+            if (duck.IsDying) return;
 
             duck.IsDying = true;
-            duck.Velocity = new Vector3(0f, FallSpeed, 0f);
+
+            // ZMĚNA: půl vodorovné rychlosti si nechá (letěla dopředu, tak padá dopředu),
+            // + počáteční malá rychlost dolů - gravitace se o zbytek postará v UpdateDyingDucks.
+            Vector3 residualHorizontal = new Vector3(duck.Velocity.X, 0, duck.Velocity.Z) * 0.5f;
+            duck.Velocity = residualHorizontal + new Vector3(0f, -2f, 0f);
+
             duck.LastUpdateTime = totalTime;
 
             _ducks[duckIndex] = duck;
             _dyingDuckIndices.Add(duckIndex);
             _instanceData[duckIndex] = BuildInstanceData(duck);
 
-            // Okamžitý upload, ať pád začne vidět hned, ne až za dalších pár framů.
             _instanceBuffer.SetData(duckIndex * VertexStrideBytes, _instanceData, duckIndex, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
         }
 
         // Zpracuje VŠECHNY umírající kachny (je jich vždy jen pár) - volá se
         // každý frame z Update(), mimo group-cyklus. Když dopadnou na zem,
         // teprve tady se skutečně recyklují (RecycleDuck).
-        private void UpdateDyingDucks(float totalTime)
+        private void UpdateDyingDucks(float totalTime, Vector3 playerPosition)
         {
-            if (_dyingDuckIndices.Count == 0) return;
+            if (_dyingDuckIndices.Count == 0 && _groundedDuckIndices.Count == 0) return;
 
+            // --- Padající kachny (ve vzduchu) ---
             for (int idx = _dyingDuckIndices.Count - 1; idx >= 0; idx--)
             {
                 int i = _dyingDuckIndices[idx];
@@ -462,6 +483,9 @@ namespace open_world
                 float elapsed = totalTime - duck.LastUpdateTime;
                 if (elapsed <= 0f) continue;
 
+                // NOVÉ: skutečná gravitace - rychlost dolů roste s časem, takže dráha
+                // je oblouk/parabola, ne rovná čára jako předtím.
+                duck.Velocity.Y += GravityAccel * elapsed;
                 duck.Position += duck.Velocity * elapsed;
                 duck.LastUpdateTime = totalTime;
 
@@ -469,17 +493,53 @@ namespace open_world
 
                 if (duck.Position.Y <= groundH)
                 {
-                    // Dopadla - skutečná recyklace (teleport pryč, reset stavu)
-                    duck.IsDying = false; // RecycleDuck přepíše zbytek, ale tohle pro jistotu
-                    _ducks[i] = duck;
+                    duck.Position.Y = groundH;
                     _dyingDuckIndices.RemoveAt(idx);
-                    RecycleDuck(i, totalTime);
+
+                    if (InstantSellOnLanding)
+                    {
+                        GameEconomy.Money += GameEconomy.DuckValue; // NOVÉ - peníze až tady, ne u výstřelu
+                        duck.IsDying = false;
+                        _ducks[i] = duck;
+                        RecycleDuck(i, totalTime);
+                    }
+                    else
+                    {
+                        // beze změny - zůstává ležet, peníze dostane až při sebrání níž
+                        duck.Velocity = Vector3.Zero;
+                        _ducks[i] = duck;
+                        _instanceData[i] = BuildInstanceData(duck);
+                        _instanceBuffer.SetData(i * VertexStrideBytes, _instanceData, i, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
+                        _groundedDuckIndices.Add(i);
+                    }
                 }
                 else
                 {
                     _ducks[i] = duck;
                     _instanceData[i] = BuildInstanceData(duck);
                     _instanceBuffer.SetData(i * VertexStrideBytes, _instanceData, i, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
+                }
+            }
+
+            // --- Kachny ležící na zemi - čekají, až k nim hráč dojde ---
+            if (!InstantSellOnLanding)
+            {
+                float pickupRadiusSq = PickupRadius * PickupRadius;
+
+                for (int idx = _groundedDuckIndices.Count - 1; idx >= 0; idx--)
+                {
+                    int i = _groundedDuckIndices[idx];
+                    DuckInstance duck = _ducks[i];
+
+                    float distSq = Vector3.DistanceSquared(duck.Position, playerPosition);
+                    if (distSq <= pickupRadiusSq)
+                    {
+                        GameEconomy.Money += GameEconomy.DuckValue; // NOVÉ - peníze až za skutečné sebrání
+                        duck.IsDying = false;
+                        _ducks[i] = duck;
+                        _groundedDuckIndices.RemoveAt(idx);
+                        RecycleDuck(i, totalTime);
+                    }
                 }
             }
         }
