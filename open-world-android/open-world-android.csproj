@@ -16,7 +16,7 @@
          ARM telefonu, bez potřeby cokoliv přehazovat mezi testováním v emulátoru
          a nahráváním na telefon. Trochu to zvětší velikost APK, ale pro vývoj
          je to jednodušší než se v tom ztrácet. -->
-    <AndroidSupportedAbis>arm64-v8a;armeabi-v7a;x86_64</AndroidSupportedAbis>
+    <RuntimeIdentifiers>android-arm64;android-arm;android-x64</RuntimeIdentifiers>
 
     <!-- Fast Deployment (výchozí u Debug configu) nahrává C# assembly na zařízení
          ZVLÁŠŤ mimo APK, kvůli rychlejšímu vývoji - ale pokud appku instaluješ

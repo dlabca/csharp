@@ -129,7 +129,7 @@ float4 MainPS(VertexShaderOutput input) : COLOR
 {
     return input.Color;
 }
-
+//666
 technique Instancing
 {
     pass P0
