@@ -20,6 +20,16 @@ namespace open_world
         private static readonly Vector3 LocalOffset = new Vector3(0.35f, -0.3f, 0.6f);
         private const float Scale = 1.0f;
 
+        // --- Recoil (zpětný ráz) ---
+        private float _recoilTimer = 0f;
+        private const float RecoilDuration = 0.15f;   // jak dlouho trvá, než se vrátí do klidu
+        private const float RecoilKickDistance = 0.18f; // o kolik se zbraň při výstřelu "přiblíží" ke kameře
+
+        public void TriggerRecoil()
+        {
+            _recoilTimer = RecoilDuration; // restartuje se i při výstřelu uprostřed předchozího recoilu
+        }
+
         public WeaponRenderer(GraphicsDevice device)
         {
             _device = device;
@@ -35,14 +45,25 @@ namespace open_world
             _effect.AmbientLightColor = new Vector3(0.5f, 0.5f, 0.55f);
         }
 
-        public void Draw(Matrix view, Matrix projection, Vector3 cameraPosition, Vector3 cameraFront, Vector3 cameraUp)
+        public void Draw(Matrix view, Matrix projection, Vector3 cameraPosition, Vector3 cameraFront, Vector3 cameraUp, float deltaTime)
         {
+            // Recoil - odpočítávání a výpočet aktuálního "kopnutí" (lineární doznění,
+            // klidně to časem vylepši na nějaké ease-out, ať to má víc "švih").
+            if (_recoilTimer > 0f)
+                _recoilTimer = MathHelper.Max(0f, _recoilTimer - deltaTime);
+
+            float recoilT = RecoilDuration > 0f ? _recoilTimer / RecoilDuration : 0f;
+            float recoilOffset = recoilT * RecoilKickDistance; // 0 v klidu, max hned po výstřelu
+
             Vector3 forward = Vector3.Normalize(cameraFront);
             Vector3 right = Vector3.Normalize(Vector3.Cross(forward, cameraUp));
             Vector3 up = Vector3.Cross(right, forward);
 
-            // Poskládání world pozice zbraně z lokálního offsetu (kamera-relativní)
-            Vector3 worldOffset = right * LocalOffset.X + up * LocalOffset.Y + forward * LocalOffset.Z;
+            // Efektivní offset = normální pozice MÍNUS kus dopředné vzdálenosti
+            // (zbraň se při výstřelu na chvíli přiblíží ke kameře/hráči).
+            Vector3 effectiveOffset = new Vector3(LocalOffset.X, LocalOffset.Y, LocalOffset.Z - recoilOffset);
+
+            Vector3 worldOffset = right * effectiveOffset.X + up * effectiveOffset.Y + forward * effectiveOffset.Z;
             Vector3 weaponPosition = cameraPosition + worldOffset;
 
             // Rotace zbraně = stejná orientace jako kamera (natočená stejným směrem).

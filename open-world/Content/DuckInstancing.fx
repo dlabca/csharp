@@ -1,7 +1,7 @@
-// DuckInstancing_v3.fx
-// Instance data jsou teď MENŠÍ (40 bajtů místo 64+) a GPU si mezi CPU updaty
-// polohu i natočení dopočítává sama extrapolací (Position + Velocity * elapsed).
-// CPU tak nemusí posílat novou pozici každý frame pro každou kachnu.
+// DuckInstancing_v4.fx
+// Orientace kachny teď vychází ze SKUTEČNÉHO 3D směru rychlosti (InstanceVelocity),
+// ne jen z yaw úhlu kolem Y - takže padající kachna se natočí hlavou dolů ve
+// směru pádu, a létající kachna se přirozeně naklání do zatáček.
 
 #if OPENGL
     #define SV_POSITION POSITION
@@ -19,11 +19,12 @@ float3 AmbientColor;
 float3 DiffuseColor;
 float3 LightDirection;
 
-float Time;              // gameTime.TotalGameTime.TotalSeconds
+float Time;
 float FlapAmplitude;
-float DuckScale;          // dřív Matrix.CreateScale(1.5f), teď jako parametr
+float DuckScale;
 
 static const float WingRootX = 0.5;
+static const float DeathRollSpeed = 8.0; // rad/s - jak rychle se padající kachna převaluje. Uprav dle vkusu.
 
 struct VertexShaderInput
 {
@@ -31,11 +32,10 @@ struct VertexShaderInput
     float3 Normal     : NORMAL0;
     float4 Color      : COLOR0;
 
-    // --- Instance data (stream 1) ---
-    float3 InstancePosition : POSITION1;   // pozice v čase InstanceLastUpdateTime
-    float3 InstanceVelocity : POSITION2;   // pro extrapolaci pozice
-    float2 YawAndTime       : TEXCOORD0;   // x = natočení (yaw), y = LastUpdateTime
-    float2 FlapParams       : TEXCOORD1;   // x = fáze, y = rychlost mávání
+    float3 InstancePosition : POSITION1;
+    float3 InstanceVelocity : POSITION2;
+    float2 YawAndTime       : TEXCOORD0;   // .y = LastUpdateTime pořád potřeba pro extrapolaci
+    float2 FlapParams       : TEXCOORD1;
 };
 
 struct VertexShaderOutput
@@ -48,7 +48,7 @@ VertexShaderOutput MainVS(in VertexShaderInput input)
 {
     VertexShaderOutput output;
 
-    // --- 1. MÁVÁNÍ KŘÍDEL (v lokálním prostoru, binární hinge - viz předchozí verze) ---
+    // --- 1. MÁVÁNÍ KŘÍDEL (v lokálním prostoru, beze změny) ---
     float x = input.Position.x;
     float side = sign(x);
     float wingMask = step(WingRootX, abs(x));
@@ -67,29 +67,51 @@ VertexShaderOutput MainVS(in VertexShaderInput input)
     flappedNormal.x = input.Normal.x * fc - input.Normal.y * fs * side;
     flappedNormal.y = input.Normal.y * fc + input.Normal.x * fs * side;
 
-    // --- 2. EXTRAPOLACE POZICE A NATOČENÍ (nahrazuje předpočítanou world matici) ---
+    // --- 2. EXTRAPOLACE POZICE (beze změny) ---
     float elapsed = Time - input.YawAndTime.y;
     float3 extrapolatedPos = input.InstancePosition + input.InstanceVelocity * elapsed;
 
-    float yaw = input.YawAndTime.x; // natočení se mezi CPU updaty nemění (zjednodušení)
-    float yc = cos(yaw);
-    float ys = sin(yaw);
+    // --- 3. NOVÉ: ORIENTACE PODLE 3D SMĚRU RYCHLOSTI (nahrazuje yaw-only rotaci) ---
+    // Local osy modelu: +Z = dopředu (hruď/hlava), +Y = nahoru, +X = doprava.
+    float3 velDir = input.InstanceVelocity;
+    float speed = length(velDir);
+    float3 forward = speed > 0.001 ? velDir / speed : float3(0, 0, 1);
 
-    // Ruční sestavení rotace kolem Y + scale (nahrazuje Matrix.CreateRotationY * CreateScale)
+    float3 worldUp = float3(0, 1, 0);
+    float3 crossUpFwd = cross(worldUp, forward);
+
+    // Pojistka proti degeneraci (let přesně svisle vzhůru/dolů) - bez tohohle
+    // by cross product dal nulový vektor a normalize() by vrátil NaN.
+    float3 right = length(crossUpFwd) > 0.001 ? normalize(crossUpFwd) : float3(1, 0, 0);
+    float3 up = cross(forward, right);
+
+    // --- NOVÉ: TUMBLE - narůstající převalování kolem osy letu, jen při pádu ---
+    // FlapParams.y == 0 signalizuje "umírá" (viz BuildInstanceData v DuckManager -
+    // flapSpeed=0 pro IsDying). FlapParams.x je v tom případě DeathFlapPhase,
+    // zamrzlý čas smrti - takže (Time - FlapParams.x) = "jak dlouho už padá".
+    bool isDying = input.FlapParams.y < 0.001;
+    if (isDying)
+    {
+        float timeSinceDeath = Time - input.FlapParams.x;
+        float rollAngle = timeSinceDeath * DeathRollSpeed;
+
+        float rc = cos(rollAngle);
+        float rs = sin(rollAngle);
+        float3 rolledRight = right * rc + up * rs;
+        float3 rolledUp = -right * rs + up * rc;
+
+        right = rolledRight;
+        up = rolledUp;
+    }
+
     float3 scaled = flappedPosition * DuckScale;
-    float3 rotated = float3(
-        scaled.x * yc + scaled.z * ys,
-        scaled.y,
-        -scaled.x * ys + scaled.z * yc
-    );
+    float3 rotated = right * scaled.x + up * scaled.y + forward * scaled.z;
 
     float3 worldPos = rotated + extrapolatedPos;
 
-    float3 rotatedNormal = float3(
-        flappedNormal.x * yc + flappedNormal.z * ys,
-        flappedNormal.y,
-        -flappedNormal.x * ys + flappedNormal.z * yc
-    );
+    // Normála musí použít STEJNOU bázi jako pozice, jinak osvětlení nesedí
+    // s natočením těla.
+    float3 rotatedNormal = right * flappedNormal.x + up * flappedNormal.y + forward * flappedNormal.z;
 
     float4 viewPosition = mul(float4(worldPos, 1.0), View);
     output.Position = mul(viewPosition, Projection);

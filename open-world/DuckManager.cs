@@ -47,6 +47,7 @@ namespace open_world
             public float LastUpdateTime;
             public Point ChunkCoord; // ve kterém chunku kachna právě je
             public bool IsDying; // NOVÉ: padá k zemi po zásahu, ještě není recyklovaná
+            public float DeathFlapPhase; // NOVÉ - fáze mávání zamrzlá v okamžiku smrti
         }
 
         // Umírající kachny se updatují KAŽDÝ frame (ne v rámci group-cyklu) -
@@ -72,7 +73,7 @@ namespace open_world
         public static bool InstantSellOnLanding = true;
 
         private const float PickupRadius = 5.0f; // jak blízko musí být hráč, aby se kachna sebrala
-        private const float GravityAccel = -18f; // m/s^2, zrychlení pádu
+        private const float GravityAccel = -72f; // m/s^2, zrychlení pádu
 
         private List<int> _groundedDuckIndices = new List<int>();
 
@@ -269,14 +270,16 @@ namespace open_world
             // ZMĚNA: flapSpeed = 0 pro umírající/přistálou kachnu -> sin(Time*0 + fáze)
             // je konstanta, křídla zůstanou zamrzlá v jedné pozici, nemávají.
             float flapSpeed = duck.IsDying ? 0f : 10.0f;
+            float flapPhase = duck.IsDying ? duck.DeathFlapPhase : duck.LastUpdateTime;
 
             return new DuckInstanceData
             {
                 Position = duck.Position,
                 Velocity = duck.Velocity,
                 YawAndTime = new Vector2(yaw, duck.LastUpdateTime),
-                FlapParams = new Vector2(duck.LastUpdateTime, flapSpeed)
+                FlapParams = new Vector2(flapPhase, flapSpeed)
             };
+
         }
 
         public void Update(float deltaTime, float totalTime, Vector3 playerPosition)
@@ -452,10 +455,9 @@ namespace open_world
             if (duck.IsDying) return;
 
             duck.IsDying = true;
+            duck.DeathFlapPhase = totalTime; // NOVÉ - zamrzne se tady, navždy stejná hodnota
 
-            // ZMĚNA: půl vodorovné rychlosti si nechá (letěla dopředu, tak padá dopředu),
-            // + počáteční malá rychlost dolů - gravitace se o zbytek postará v UpdateDyingDucks.
-            Vector3 residualHorizontal = new Vector3(duck.Velocity.X, 0, duck.Velocity.Z) * 0.5f;
+            Vector3 residualHorizontal = new Vector3(duck.Velocity.X, 0, duck.Velocity.Z) * 1.5f;
             duck.Velocity = residualHorizontal + new Vector3(0f, -2f, 0f);
 
             duck.LastUpdateTime = totalTime;

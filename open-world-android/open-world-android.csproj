@@ -44,6 +44,8 @@
     <Compile Include="..\open-world\TerrainGenerator.cs" />
     <Compile Include="..\open-world\GameEconomy.cs" />
     <Compile Include="..\open-world\DesktopShopUI.cs" />
+    <Compile Include="..\open-world\WeaponMeshGenerator.cs" />
+    <Compile Include="..\open-world\WeaponRenderer.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Řekne projektu, kde najít hlavní konfigurační soubor obsahu -->
