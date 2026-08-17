@@ -47,6 +47,7 @@ namespace open_world
             public float LastUpdateTime;
             public Point ChunkCoord; // ve kterém chunku kachna právě je
             public bool IsDying; // NOVÉ: padá k zemi po zásahu, ještě není recyklovaná
+            public bool IsGrounded; // <--- PŘIDAT TENTO ŘÁDEK
             public float DeathFlapPhase; // NOVÉ - fáze mávání zamrzlá v okamžiku smrti
         }
 
@@ -70,7 +71,7 @@ namespace open_world
         private const float DuckScale = 1.5f;
         private const float DuckBoundingRadius = 8.0f;
         public int Count => _ducks.Count;
-        public static bool InstantSellOnLanding = true;
+        public static bool InstantSellOnLanding = false;
 
         private const float PickupRadius = 5.0f; // jak blízko musí být hráč, aby se kachna sebrala
         private const float GravityAccel = -72f; // m/s^2, zrychlení pádu
@@ -296,7 +297,7 @@ namespace open_world
             {
                 DuckInstance duck = _ducks[i];
 
-                if (duck.IsDying) continue; // padá - o tu se stará UpdateDyingDucks(), ne skupinová AI
+                if (duck.IsDying || duck.IsGrounded) continue; // padá - o tu se stará UpdateDyingDucks(), ne skupinová AI
 
                 float elapsed = totalTime - duck.LastUpdateTime;
                 if (elapsed <= 0f) elapsed = 1f / 60f;
@@ -509,6 +510,7 @@ namespace open_world
                     {
                         // beze změny - zůstává ležet, peníze dostane až při sebrání níž
                         duck.Velocity = Vector3.Zero;
+                        duck.IsGrounded = true; // <--- PŘIDAT TENTO ŘÁDEK
                         _ducks[i] = duck;
                         _instanceData[i] = BuildInstanceData(duck);
                         _instanceBuffer.SetData(i * VertexStrideBytes, _instanceData, i, 1, VertexStrideBytes, SetDataOptions.NoOverwrite);
@@ -538,6 +540,7 @@ namespace open_world
                     {
                         GameEconomy.Money += GameEconomy.DuckValue; // NOVÉ - peníze až za skutečné sebrání
                         duck.IsDying = false;
+                        duck.IsGrounded = false; // <--- PŘIDAT TENTO ŘÁDEK
                         _ducks[i] = duck;
                         _groundedDuckIndices.RemoveAt(idx);
                         RecycleDuck(i, totalTime);

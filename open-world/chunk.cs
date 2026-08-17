@@ -51,13 +51,13 @@ namespace open_world
 
                     Color color;
                     if (height < 0.0f)
-                        color = new Color(140, 120, 80);
+                        color = new Color(140, 120, 80, 120);
                     else if (height < 2.5f)
-                        color = new Color(210, 190, 130);
+                        color = new Color(210, 190, 130,120);
                     else if (height < 25.0f)
-                        color = new Color(60, 140, 50);
+                        color = new Color(60, 140, 50, 120);
                     else
-                        color = new Color(100, 100, 100);
+                        color = new Color(100, 100, 100,120);
 
                     float hL = TerrainGenerator.GetHeight(worldX - step, worldZ);
                     float hR = TerrainGenerator.GetHeight(worldX + step, worldZ);

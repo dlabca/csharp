@@ -168,7 +168,7 @@ namespace open_world
         {
             // 1. Zaručíme plný neprůhledný režim pro terén
             _graphicsDevice.DepthStencilState = DepthStencilState.Default;
-            _graphicsDevice.BlendState = BlendState.Opaque;
+            _graphicsDevice.BlendState = BlendState.AlphaBlend;
 
             // Vykreslení všech aktuálně načtených chunků terénu
             foreach (var chunk in _loadedChunks.Values)
