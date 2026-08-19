@@ -71,7 +71,7 @@ namespace open_world
         private const float DuckScale = 1.5f;
         private const float DuckBoundingRadius = 8.0f;
         public int Count => _ducks.Count;
-        public static bool InstantSellOnLanding = false;
+        public static bool InstantSellOnLanding = true;
 
         private const float PickupRadius = 5.0f; // jak blízko musí být hráč, aby se kachna sebrala
         private const float GravityAccel = -72f; // m/s^2, zrychlení pádu
@@ -496,7 +496,7 @@ namespace open_world
 
                 if (duck.Position.Y <= groundH)
                 {
-                    duck.Position.Y = groundH;
+                    duck.Position.Y = groundH + 5.0f;
                     _dyingDuckIndices.RemoveAt(idx);
 
                     if (InstantSellOnLanding)
