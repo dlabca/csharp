@@ -330,7 +330,7 @@ namespace open_world
                 _shopUI.Update(Input.CurrentMouseState, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
 
                 if (_shopUI.CloseRequested ||
-                    Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.Escape))
+                    Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.Escape) || Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.E))
                 {
                     _currentState = GameState.Playing;
                     IsMouseVisible = false;
