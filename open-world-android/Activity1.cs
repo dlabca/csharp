@@ -210,5 +210,10 @@ namespace open_world_android
             builder.SetNegativeButton("Zavřít", (s, e) => { });
             builder.Show();
         }
+        protected override void OnPause()
+        {
+            base.OnPause();
+            SaveSystem.Save();
+        }
     }
 }

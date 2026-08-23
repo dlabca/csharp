@@ -46,6 +46,7 @@
     <Compile Include="..\open-world\DesktopShopUI.cs" />
     <Compile Include="..\open-world\WeaponMeshGenerator.cs" />
     <Compile Include="..\open-world\WeaponRenderer.cs" />
+    <Compile Include="..\open-world\Savesystem.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Řekne projektu, kde najít hlavní konfigurační soubor obsahu -->

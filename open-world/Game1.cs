@@ -91,6 +91,8 @@ namespace open_world
 
             Window.AllowUserResizing = true;
             Window.ClientSizeChanged += OnWindowResize;
+
+            Exiting += OnGameExiting;
         }
 
         protected override void Initialize()
@@ -124,6 +126,7 @@ namespace open_world
 
             _chunkManager = new ChunkManager(GraphicsDevice, seed: 5);
             _chunkManager.Update(_cameraPosition, isFirstLoad: true);
+            SaveSystem.Load();
             _pixelTexture = new Texture2D(GraphicsDevice, 1, 1);
             _pixelTexture.SetData(new Color[] { Color.White });
 
@@ -370,21 +373,21 @@ namespace open_world
 
             _chunkManager.Draw(_terrainEffect, _waterEffect, _cameraPosition);
 
-/*             // --- VYKRESLENÍ TESTOVACÍ KACHNY ---
-            GraphicsDevice.BlendState = BlendState.Opaque;
-            GraphicsDevice.DepthStencilState = DepthStencilState.Default;
+            /*             // --- VYKRESLENÍ TESTOVACÍ KACHNY ---
+                        GraphicsDevice.BlendState = BlendState.Opaque;
+                        GraphicsDevice.DepthStencilState = DepthStencilState.Default;
 
-            // Umístění kachny v prostoru (otáčení/posun)
-            _terrainEffect.World = Matrix.CreateScale(2.0f) * Matrix.CreateTranslation(_testDuckPosition);
+                        // Umístění kachny v prostoru (otáčení/posun)
+                        _terrainEffect.World = Matrix.CreateScale(2.0f) * Matrix.CreateTranslation(_testDuckPosition);
 
-            GraphicsDevice.SetVertexBuffer(_duckVertexBuffer);
-            GraphicsDevice.Indices = _duckIndexBuffer;
+                        GraphicsDevice.SetVertexBuffer(_duckVertexBuffer);
+                        GraphicsDevice.Indices = _duckIndexBuffer;
 
-            foreach (EffectPass pass in _terrainEffect.CurrentTechnique.Passes)
-            {
-                pass.Apply();
-                GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _duckIndexCount / 3);
-            } */
+                        foreach (EffectPass pass in _terrainEffect.CurrentTechnique.Passes)
+                        {
+                            pass.Apply();
+                            GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _duckIndexCount / 3);
+                        } */
             _duckManager.Draw(
                 view,
                 projection,
@@ -568,6 +571,10 @@ namespace open_world
             RecalculateUILayout();
 
             Window.ClientSizeChanged += OnWindowResize;
+        }
+        private void OnGameExiting(object sender, EventArgs args)
+        {
+            SaveSystem.Save();
         }
     }
 }

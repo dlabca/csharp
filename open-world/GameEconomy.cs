@@ -37,6 +37,9 @@ namespace open_world
         public static float CurrentRange => RangeValues[_rangeTier];
         public static float CurrentSpread => SpreadValues[_spreadTier];
         public static int CurrentMaxDucks => DuckCountValues[_duckCountTier];
+        public static int RangeTier => _rangeTier;
+        public static int SpreadTier => _spreadTier;
+        public static int DuckCountTier => _duckCountTier;
 
         // --- Obecný seznam upgradů pro UI ---
         // Až budeš chtít přidat další (např. max počet kachen ve hře), stačí sem
@@ -93,5 +96,12 @@ namespace open_world
                 }
             }
         };
+        public static void LoadState(int money, int rangeTier, int spreadTier, int duckCountTier)
+        {
+            Money = money;
+            _rangeTier = Math.Clamp(rangeTier, 0, RangeValues.Length - 1);
+            _spreadTier = Math.Clamp(spreadTier, 0, SpreadValues.Length - 1);
+            _duckCountTier = Math.Clamp(duckCountTier, 0, DuckCountValues.Length - 1);
+        }
     }
 }
