@@ -66,10 +66,6 @@ namespace open_world
         private Texture2D _roundedPanelTexture;
         private Rectangle _panelBounds;
         private bool _wasMaximizedBeforeFullscreen = false;
-        /* private VertexBuffer _duckVertexBuffer;
-        private IndexBuffer _duckIndexBuffer;
-        private int _duckIndexCount;
-        private Vector3 _testDuckPosition = new Vector3(0, 15, 20); // Ve vzduchu před hráčem */
         private DuckManager _duckManager;
         private float _fpsTimer = 0f;
         private int _fpsCounter = 0;
@@ -79,6 +75,8 @@ namespace open_world
         public const float maxTerrainHeight = 40f;
         private WeaponRenderer _weaponRenderer;
         private DesktopShopUI _shopUI;
+        private Dog _dog = new Dog();
+        private DogRenderer _dogRenderer;
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
@@ -160,11 +158,6 @@ namespace open_world
             {
                 Exit();
             };
-            // Vygenerování 13-tris kachny
-            /* var (duckVB, duckIB, duckCount) = DuckMeshGenerator.CreateDuckMesh(GraphicsDevice);
-            _duckVertexBuffer = duckVB;
-            _duckIndexBuffer = duckIB;
-            _duckIndexCount = duckCount; */
 
             var duckInstancingEffect = Content.Load<Effect>("DuckInstancing");
             _duckManager = new DuckManager(GraphicsDevice, duckInstancingEffect, _chunkManager);
@@ -178,12 +171,14 @@ namespace open_world
                 _shopUI = new DesktopShopUI(_font, _pixelTexture);
             }
             _weaponRenderer = new WeaponRenderer(GraphicsDevice);
+            _dog.Position = _cameraPosition; // stejný spawn bod jako hráč, nebo kousek vedle
+            _dogRenderer = new DogRenderer(GraphicsDevice);
         }
 
         protected override void Update(GameTime gameTime)
         {
             float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
-            _fpsTimer += (float)gameTime.ElapsedGameTime.TotalSeconds;
+            _fpsTimer += deltaTime;
             _fpsCounter++;
 
             if (_fpsTimer >= 1.0f) // Každou 1 sekundu vyhodnotíme FPS
@@ -307,7 +302,7 @@ namespace open_world
                         GameEconomy.CurrentSpread,
                         (float)gameTime.TotalGameTime.TotalSeconds
                     );
-                    _weaponRenderer.TriggerRecoil(); // NOVÉ
+                    _weaponRenderer.TriggerRecoil();
                 }
                 if (!Input.IsTouchPlatform && Input.IsKeyPressed(Microsoft.Xna.Framework.Input.Keys.E))
                 {
@@ -323,10 +318,11 @@ namespace open_world
                 }
 
                 _duckManager.Update(
-                    (float)gameTime.ElapsedGameTime.TotalSeconds,
+                    deltaTime,
                     (float)gameTime.TotalGameTime.TotalSeconds,
-                    _cameraPosition // NOVÉ - pro kontrolu sebrání kachen ze země
+                    _cameraPosition
                 );
+                _dog.Update(deltaTime, (float)gameTime.TotalGameTime.TotalSeconds, _cameraPosition, _cameraFront, _duckManager);
             }
             else if (_currentState == GameState.Shop)
             {
@@ -372,22 +368,6 @@ namespace open_world
             _waterEffect.Projection = projection;
 
             _chunkManager.Draw(_terrainEffect, _waterEffect, _cameraPosition);
-
-            /*             // --- VYKRESLENÍ TESTOVACÍ KACHNY ---
-                        GraphicsDevice.BlendState = BlendState.Opaque;
-                        GraphicsDevice.DepthStencilState = DepthStencilState.Default;
-
-                        // Umístění kachny v prostoru (otáčení/posun)
-                        _terrainEffect.World = Matrix.CreateScale(2.0f) * Matrix.CreateTranslation(_testDuckPosition);
-
-                        GraphicsDevice.SetVertexBuffer(_duckVertexBuffer);
-                        GraphicsDevice.Indices = _duckIndexBuffer;
-
-                        foreach (EffectPass pass in _terrainEffect.CurrentTechnique.Passes)
-                        {
-                            pass.Apply();
-                            GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _duckIndexCount / 3);
-                        } */
             _duckManager.Draw(
                 view,
                 projection,
@@ -396,6 +376,7 @@ namespace open_world
                 Vector3.Normalize(new Vector3(-0.5f, -1.0f, -0.3f)),             // směr světla
                 (float)gameTime.TotalGameTime.TotalSeconds
             );
+            _dogRenderer.Draw(view, projection, _dog.Position, _dog.FacingDirection);
             _weaponRenderer.Draw(
                 view, projection, _cameraPosition, _cameraFront, _cameraUp,
                 (float)gameTime.ElapsedGameTime.TotalSeconds // NOVÉ - deltaTime pro odpočet recoilu

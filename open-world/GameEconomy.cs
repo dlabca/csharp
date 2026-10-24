@@ -94,7 +94,24 @@ namespace open_world
                     _duckCountTier++;
                     return true;
                 }
+            },
+            new Upgrade
+            {
+                Name = "Rychlost psa",
+                ValueText = () => $"{DogEconomy.CurrentSpeed:0.0} m/s",
+                CanBuy = () => DogEconomy.CanUpgradeSpeed,
+                NextCost = () => DogEconomy.NextSpeedCost,
+                TryBuy = () => DogEconomy.TryUpgradeSpeed()
+            },
+            new Upgrade
+            {
+                Name = "Nosnost psa",
+                ValueText = () => $"{DogEconomy.CurrentCapacity} kachen",
+                CanBuy = () => DogEconomy.CanUpgradeCapacity,
+                NextCost = () => DogEconomy.NextCapacityCost,
+                TryBuy = () => DogEconomy.TryUpgradeCapacity()
             }
+
         };
         public static void LoadState(int money, int rangeTier, int spreadTier, int duckCountTier)
         {

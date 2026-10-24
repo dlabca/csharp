@@ -22,6 +22,8 @@ namespace open_world
             public int RangeTier { get; set; }
             public int SpreadTier { get; set; }
             public int DuckCountTier { get; set; }
+            public int DogSpeedTier { get; set; }
+            public int DogCapacityTier { get; set; }
         }
 
         private static string GetSavePath()
@@ -46,7 +48,9 @@ namespace open_world
                     Money = GameEconomy.Money,
                     RangeTier = GameEconomy.RangeTier,
                     SpreadTier = GameEconomy.SpreadTier,
-                    DuckCountTier = GameEconomy.DuckCountTier
+                    DuckCountTier = GameEconomy.DuckCountTier,
+                    DogSpeedTier = DogEconomy.SpeedTier,
+                    DogCapacityTier = DogEconomy.CapacityTier
                 };
 
                 string json = JsonSerializer.Serialize(data);
@@ -76,6 +80,7 @@ namespace open_world
                 var data = JsonSerializer.Deserialize<SaveData>(json);
 
                 GameEconomy.LoadState(data.Money, data.RangeTier, data.SpreadTier, data.DuckCountTier);
+                DogEconomy.LoadState(data.DogSpeedTier, data.DogCapacityTier);
                 return true;
             }
             catch (Exception ex)

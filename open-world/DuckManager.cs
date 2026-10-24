@@ -71,7 +71,7 @@ namespace open_world
         private const float DuckScale = 1.5f;
         private const float DuckBoundingRadius = 8.0f;
         public int Count => _ducks.Count;
-        public static bool InstantSellOnLanding = false;
+        public static bool InstantSellOnLanding = true;
 
         private const float PickupRadius = 5.0f; // jak blízko musí být hráč, aby se kachna sebrala
         private const float GravityAccel = -72f; // m/s^2, zrychlení pádu
@@ -548,6 +548,48 @@ namespace open_world
                 }
             }
         }
+        public bool TryGetNearestGroundedDuck(Vector3 from, float maxDistance, out Vector3 position)
+        {
+            position = Vector3.Zero;
+            float bestDistSq = maxDistance * maxDistance;
+            bool found = false;
+
+            foreach (int i in _groundedDuckIndices)
+            {
+                float distSq = Vector3.DistanceSquared(_ducks[i].Position, from);
+                if (distSq < bestDistSq)
+                {
+                    bestDistSq = distSq;
+                    position = _ducks[i].Position;
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+        public bool TryPickupGroundedDuck(Vector3 from, float pickupRadius, float totalTime)
+        {
+            float pickupRadiusSq = pickupRadius * pickupRadius;
+
+            for (int idx = _groundedDuckIndices.Count - 1; idx >= 0; idx--)
+            {
+                int i = _groundedDuckIndices[idx];
+                DuckInstance duck = _ducks[i];
+
+                if (Vector3.DistanceSquared(duck.Position, from) <= pickupRadiusSq)
+                {
+                    duck.IsDying = false;
+                    duck.IsGrounded = false;
+                    _ducks[i] = duck;
+                    _groundedDuckIndices.RemoveAt(idx);
+                    RecycleDuck(i, totalTime);
+                    return true; // jen jedna kachna za volání - jednoduché a stačí to
+                }
+            }
+
+            return false;
+        }
+
 
         public void Draw(Matrix view, Matrix projection, Vector3 ambientColor, Vector3 diffuseColor, Vector3 lightDirection, float totalTime)
         {
