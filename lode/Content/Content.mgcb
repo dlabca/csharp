@@ -13,6 +13,58 @@
 
 #---------------------------------- Content ---------------------------------#
 
+#begin ../kenney_pirate-pack/PNG/Default size/Effects/explosion1.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/processorParam:Version=3.8.6.0
+/build:../kenney_pirate-pack/PNG/Default size/Effects/explosion1.png;explosion1.png
+
+#begin ../kenney_pirate-pack/PNG/Default size/Effects/explosion2.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/processorParam:Version=3.8.6.0
+/build:../kenney_pirate-pack/PNG/Default size/Effects/explosion2.png;explosion2.png
+
+#begin ../kenney_pirate-pack/PNG/Default size/Effects/explosion3.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/processorParam:Version=3.8.6.0
+/build:../kenney_pirate-pack/PNG/Default size/Effects/explosion3.png;explosion3.png
+
+#begin ../kenney_pirate-pack/PNG/Default size/Ship parts/cannonBall.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/processorParam:Version=3.8.6.0
+/build:../kenney_pirate-pack/PNG/Default size/Ship parts/cannonBall.png;cannonBall.png
+
 #begin ../kenney_pirate-pack/PNG/Default size/Ships/ship (1).png
 /importer:TextureImporter
 /processor:TextureProcessor
