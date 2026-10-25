@@ -1,13 +1,8 @@
 using System;
-using System.Data;
-//using System.Drawing;
-//using System.Numerics;
-using System.Xml.Serialization;
 using lode;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Microsoft.Xna.Framework;
-using System.Net.Mime;
 class Ship
 {
     Vector2 pos;
@@ -20,7 +15,6 @@ class Ship
     const float SCALE = 0.5f;
     Vector2 velocity = Vector2.Zero;
     float rotation;
-    float aktualSpeed = 0;
 
     public Ship(Vector2 Pos, int rotation, int Damage, Keys MvUp, Keys MvDown, Keys MvRight, Keys MvLeft, Texture2D Sdmg0, Texture2D Sdmg1, Texture2D Sdmg2)
     {
@@ -41,13 +35,9 @@ class Ship
         Vector2 direction = Vector2.Zero;
 
         if (keyboard.IsKeyDown(this.MoveRight))
-        {
             direction += new Vector2(1, 0);
-        }
         if (keyboard.IsKeyDown(this.MoveLeft))
-        {
             direction += new Vector2(-1, 0);
-        }
         if (direction != Vector2.Zero)
         {
             velocity.X += direction.X * SPEED;
@@ -58,29 +48,40 @@ class Ship
         //------------------------------------------
 
         if (keyboard.IsKeyDown(this.MoveUp))
-        {
             direction += new Vector2(0, -1);
-
-        }
         if (keyboard.IsKeyDown(this.MoveDown))
-        {
             direction += new Vector2(0, 1);
 
-        }
-        //Console.WriteLine(direction);
         if (direction != Vector2.Zero)
         {
             velocity.Y += direction.Y * SPEED;
             velocity.Y = Vector2.Clamp(velocity, new Vector2(0, -MAXSPEED), new Vector2(0, MAXSPEED)).Y;
         }
         else velocity.Y *= 0.95f;
-        aktualSpeed = velocity.Length();
-        if (aktualSpeed < SPEED)
+        if (velocity.Length() < SPEED)
             velocity = Vector2.Zero;
+        if (checkCollision(pos + new Vector2(velocity.X * (float)delta, 0)))
+            velocity.X = 0;
+        if (checkCollision(pos + new Vector2(0,velocity.Y * (float)delta)))
+            velocity.Y = 0;
         pos += velocity * (float)delta;
         if (velocity != Vector2.Zero)
             rotation = MathF.Atan2(velocity.Y, velocity.X);
 
+    }
+    private bool checkCollision(Vector2 targetPosition)
+    {
+        int tileX = (int)targetPosition.X / Game1.tileSize;
+        int tileY = (int)targetPosition.Y / Game1.tileSize;
+
+        foreach (var item in Game1.islands)
+        {
+            if (tileX > item[0] && tileX < item[1] && tileY > item[2] && tileY < item[3])
+            {
+                return true;
+            }
+        }
+        return false;
     }
     public void Draw(SpriteBatch spriteBatch)
     {

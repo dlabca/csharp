@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Net.Security;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -13,10 +15,15 @@ public class Game1 : Game
     Texture2D waterTile;
     int height = 704;
     int width = 1280;
-    int tileSize = 16;
-    int gridH;
-    int gridW;
+    public static int tileSize = 16;
+    int gridH;//44
+    int gridW;//80
     int[,] map;
+    public static List<int[]> islands = new List<int[]>()
+    {
+        new int[] {10,20,10,30},
+    };
+    Dictionary<int, Texture2D> textures = new Dictionary<int, Texture2D>();
 
     public Game1()
     {
@@ -32,9 +39,23 @@ public class Game1 : Game
     protected override void Initialize()
     {
 
+
         gridH = height / tileSize;
         gridW = width / tileSize;
-        map = new int[gridH,gridW];
+        map = new int[gridW, gridH];
+        for (int x = 0; x < gridW; x++)
+        {
+            for (int y = 0; y < gridH; y++)
+            {
+                foreach (var item in islands)
+                {
+                    if (x > item[0] && x < item[1] && y > item[2] && y < item[3])
+                    {
+                        map[x, y] = 1;
+                    }
+                }
+            }
+        }
         // TODO: Add your initialization logic here
 
         base.Initialize();
@@ -51,6 +72,7 @@ public class Game1 : Game
         ShipBlue = new(new Vector2(width / 2, height / 2), 0, 0, Keys.W, Keys.S, Keys.D, Keys.A, Content.Load<Texture2D>("ship (5)"), Content.Load<Texture2D>("ship (11)"), Content.Load<Texture2D>("ship (17)"));
         ShipYellow = new(new Vector2(width / 2, height / 2), 0, 0, Keys.W, Keys.S, Keys.D, Keys.A, Content.Load<Texture2D>("ship (6)"), Content.Load<Texture2D>("ship (12)"), Content.Load<Texture2D>("ship (18)"));
 
+        textures[1] = Content.Load<Texture2D>("tile_24");
         // TODO: use this.Content to load your game content here
     }
 
@@ -75,7 +97,14 @@ public class Game1 : Game
         {
             for (int y = 0; y < gridH; y++)
             {
-                _spriteBatch.Draw(waterTile, new Rectangle(x * tileSize, y * tileSize, tileSize, tileSize), Color.White);
+                if (map[x, y] != 0)
+                {
+                    _spriteBatch.Draw(textures[map[x, y]], new Rectangle(x * tileSize, y * tileSize, tileSize, tileSize), Color.White);
+                }
+                else
+                {
+                    _spriteBatch.Draw(waterTile, new Rectangle(x * tileSize, y * tileSize, tileSize, tileSize), Color.White);
+                }
             }
         }
         ShipBlue.Draw(_spriteBatch);
